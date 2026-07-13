@@ -6,7 +6,6 @@
     <title>TaleForge - 智能故事生成器</title>
     <script src="./assets/js/vue.global.prod.js"></script>
     <script src="./assets/js/tailwindcss.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
     <link href="./assets/css/font-awesome.css" rel="stylesheet">
     <style>
         body { font-family: 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif; }
@@ -2212,14 +2211,38 @@
 
                 const renderMarkdown = (text) => {
                     if (!text) return ''
-                    try {
-                        if (typeof marked !== 'undefined') {
-                            return marked.parse(text, { breaks: true, gfm: true })
-                        }
-                    } catch (e) {
-                        console.error('Markdown parse error:', e)
-                    }
-                    return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\n/g, '<br>')
+                    let html = text
+                        .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+                    html = html.replace(/```(\w*)\n?([\s\S]*?)```/g, (_, lang, code) => {
+                        code = code.replace(/^\n|\n$/g, '')
+                        return '<pre><code>' + code + '</code></pre>'
+                    })
+                    html = html.replace(/`([^`]+)`/g, '<code>$1</code>')
+                    html = html.replace(/^#### (.+)$/gm, '<h4>$1</h4>')
+                    html = html.replace(/^### (.+)$/gm, '<h3>$1</h3>')
+                    html = html.replace(/^## (.+)$/gm, '<h2>$1</h2>')
+                    html = html.replace(/^# (.+)$/gm, '<h1>$1</h1>')
+                    html = html.replace(/^---+/gm, '<hr>')
+                    html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+                    html = html.replace(/\*(.+?)\*/g, '<em>$1</em>')
+                    html = html.replace(/^> (.+)$/gm, '<blockquote>$1</blockquote>')
+                    html = html.replace(/^- (.+)$/gm, '<li>$1</li>')
+                    html = html.replace(/(<li>.*<\/li>\n?)+/g, '<ul>$&</ul>')
+                    html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank">$1</a>')
+                    html = html.replace(/\n\n+/g, '</p><p>')
+                    html = html.replace(/\n/g, '<br>')
+                    html = '<p>' + html + '</p>'
+                    html = html.replace(/<p><\/p>/g, '')
+                    html = html.replace(/<p><h([1-4])/g, '<h$1')
+                    html = html.replace(/<\/h([1-4])><\/p>/g, '</h$1>')
+                    html = html.replace(/<p><hr><\/p>/g, '<hr>')
+                    html = html.replace(/<p><pre>/g, '<pre>')
+                    html = html.replace(/<\/pre><\/p>/g, '</pre>')
+                    html = html.replace(/<p><blockquote>/g, '<blockquote>')
+                    html = html.replace(/<\/blockquote><\/p>/g, '</blockquote>')
+                    html = html.replace(/<p><ul>/g, '<ul>')
+                    html = html.replace(/<\/ul><\/p>/g, '</ul>')
+                    return html
                 }
 
                 const formatDate = (dateStr) => {
