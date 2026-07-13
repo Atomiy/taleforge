@@ -6,7 +6,6 @@ from backend.models.work import Work, Volume
 from backend.services.work_manager import WorkManager
 from backend.services.history_manager import HistoryManager
 from backend.services.llm_client import LLMClient
-from backend.config import DEEPSEEK_API_KEY, DEEPSEEK_BASE_URL
 
 logger = logging.getLogger(__name__)
 
@@ -14,7 +13,11 @@ router = APIRouter()
 
 work_manager = WorkManager()
 history_manager = HistoryManager()
-llm_client = LLMClient(api_key=DEEPSEEK_API_KEY, base_url=DEEPSEEK_BASE_URL)
+
+
+def _get_llm_client():
+    import backend.config as cfg
+    return LLMClient(api_key=cfg.DEEPSEEK_API_KEY, base_url=cfg.DEEPSEEK_BASE_URL)
 
 
 @router.post("/")
@@ -174,7 +177,7 @@ async def update_summary(work_id: str, data: dict = Body(...)):
                         {"role": "system", "content": f"你是一个专业的文学编辑。请用简洁的语言（约{max(60, target_len // max(len(work.volumes), 1))}字）概括以下章节的核心情节，保留关键冲突和转折。"},
                         {"role": "user", "content": f"请概括「{vol.title}」中各章节的核心情节：\n\n{chapters_text}"}
                     ]
-                    v_summary = await llm_client.chat(messages, temperature=0.3, max_tokens=512)
+                    v_summary = await _get_llm_client().chat(messages, temperature=0.3, max_tokens=512)
                     volume_summaries.append(f"【{vol.title}】{v_summary.strip()}")
                 except Exception as e:
                     logger.warning(f"卷 {vol.id} 概要生成失败: {e}")
@@ -187,7 +190,7 @@ async def update_summary(work_id: str, data: dict = Body(...)):
                     {"role": "system", "content": f"你是一个专业的文学编辑。请将各卷概要汇总为一段连贯、精炼的作品内容概要（约{target_len}字）。"},
                     {"role": "user", "content": f"请汇总为一段连贯的作品概要：\n\n{combined}"}
                 ]
-                summary = await llm_client.chat(messages, temperature=0.3, max_tokens=1024)
+                summary = await _get_llm_client().chat(messages, temperature=0.3, max_tokens=1024)
                 summary = summary.strip()
             except Exception as e:
                 logger.warning(f"汇总概要生成失败: {e}")
