@@ -42,9 +42,13 @@ python start.py          # 或双击 start.bat
 
 ## 智能体流程
 
-```
-用户输入 → Planner(策划大纲) → Character(角色深化)
-         → Writer(流式写作) → Polisher(润色整合) → 输出
+```mermaid
+flowchart LR
+    Input["用户输入"] --> P["Planner<br/>策划大纲"]
+    P --> C["Character<br/>角色深化"]
+    C --> W["Writer<br/>流式写作"]
+    W --> Pol["Polisher<br/>润色整合"]
+    Pol --> Output["输出故事"]
 ```
 
 ## 环境要求

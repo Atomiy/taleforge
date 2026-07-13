@@ -30,34 +30,50 @@ TaleForge 是一个基于 AI 多智能体协作架构的智能故事生成器。
 
 ## 技术架构
 
-```
-┌──────────────────────────────────────────────────┐
-│                   前端 (Vue 3)                     │
-│  index.html  +  Tailwind CSS  +  Font Awesome     │
-└────────────────────┬─────────────────────────────┘
-                     │ HTTP / SSE
-┌────────────────────▼─────────────────────────────┐
-│               后端 (FastAPI + Uvicorn)              │
-│                                                    │
-│  ┌──────────┐  ┌──────────┐  ┌──────────────────┐ │
-│  │ 路由层    │→│ 服务层    │→│ 多智能体编排器    │ │
-│  │ story.py │  │ history_ │  │ orchestrator.py  │ │
-│  │ history. │  │ manager  │  │  Planner → Char   │ │
-│  │ py+config│  │ .py      │  │  → Writer → Pol. │ │
-│  └──────────┘  └──────────┘  └──────────────────┘ │
-└────────────────────┬─────────────────────────────┘
-                     │ JSON 文件
-┌────────────────────▼─────────────────────────────┐
-│             数据存储 (data/*.json)                 │
-│               stories.json                        │
-└──────────────────────────────────────────────────┘
+```mermaid
+flowchart TB
+    subgraph Frontend["前端 (Vue 3 + Tailwind CSS)"]
+        UI[index.html 单页应用]
+    end
+
+    subgraph Backend["后端 (FastAPI + Uvicorn)"]
+        Router["路由层 (story / history / config / works)"]
+        Svc["服务层 (LLMClient / HistoryManager)"]
+        Orch["多智能体协调器"]
+        Router --> Svc --> Orch
+    end
+
+    subgraph Agents["智能体"]
+        Planner["Planner 策划"]
+        Char["Character 角色"]
+        Writer["Writer 写作"]
+        Polish["Polisher 润色"]
+        Planner --> Char --> Writer --> Polish
+    end
+
+    subgraph External["外部服务"]
+        DeepSeek["DeepSeek API"]
+    end
+
+    subgraph Storage["数据存储"]
+        JSON["stories.json / works.json"]
+    end
+
+    UI <-->|"HTTP / SSE"| Router
+    Orch --> Agents
+    Orch <-->|"API 调用"| DeepSeek
+    Svc <--> JSON
 ```
 
 ### 智能体协作流程
 
-```
-输入主题 → Planner(策划大纲) → Character(角色深化) 
-         → Writer(写作章节) → Polisher(润色整合) → 输出故事
+```mermaid
+flowchart LR
+    Input["用户输入<br/>主题/体裁/风格"] --> P["Planner<br/>策划故事大纲"]
+    P --> C["Character<br/>深化角色设定"]
+    C --> W["Writer<br/>流式写作"]
+    W --> Pol["Polisher<br/>润色整合"]
+    Pol --> Output["输出完整故事"]
 ```
 
 每个智能体通过 SSE 事件流实时反馈状态和阶段性结果。
