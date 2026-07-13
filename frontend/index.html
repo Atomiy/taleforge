@@ -6,6 +6,7 @@
     <title>TaleForge - 智能故事生成器</title>
     <script src="./assets/js/vue.global.prod.js"></script>
     <script src="./assets/js/tailwindcss.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
     <link href="./assets/css/font-awesome.css" rel="stylesheet">
     <style>
         body { font-family: 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif; }
@@ -15,7 +16,25 @@
         .agent-writing { animation: typing 1s infinite; }
         @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
         @keyframes typing { 0%, 100% { border-color: #3b82f6; } 50% { border-color: #93c5fd; } }
-        .story-content { white-space: pre-wrap; line-height: 1.8; }
+        .story-content { line-height: 1.8; word-wrap: break-word; overflow-wrap: break-word; }
+        .story-content h1 { font-size: 1.8em; font-weight: 700; margin: 1em 0 0.5em; color: #1e293b; border-bottom: 2px solid #e2e8f0; padding-bottom: 0.3em; }
+        .story-content h2 { font-size: 1.5em; font-weight: 700; margin: 0.9em 0 0.4em; color: #334155; border-bottom: 1px solid #e2e8f0; padding-bottom: 0.2em; }
+        .story-content h3 { font-size: 1.25em; font-weight: 600; margin: 0.8em 0 0.3em; color: #475569; }
+        .story-content h4 { font-size: 1.1em; font-weight: 600; margin: 0.7em 0 0.2em; color: #64748b; }
+        .story-content p { margin: 0.5em 0; }
+        .story-content ul, .story-content ol { margin: 0.5em 0; padding-left: 1.5em; }
+        .story-content li { margin: 0.25em 0; }
+        .story-content blockquote { border-left: 4px solid #a78bfa; padding: 0.5em 1em; margin: 0.8em 0; background: #f5f3ff; border-radius: 0 8px 8px 0; color: #5b21b6; }
+        .story-content code { background: #f1f5f9; padding: 0.15em 0.4em; border-radius: 4px; font-size: 0.9em; font-family: 'Cascadia Code', 'Fira Code', 'Consolas', monospace; color: #db2777; }
+        .story-content pre { background: #1e293b; color: #e2e8f0; padding: 1em 1.2em; border-radius: 10px; overflow-x: auto; margin: 0.8em 0; }
+        .story-content pre code { background: none; padding: 0; color: inherit; font-size: 0.85em; }
+        .story-content table { border-collapse: collapse; width: 100%; margin: 0.8em 0; }
+        .story-content th, .story-content td { border: 1px solid #cbd5e1; padding: 0.5em 0.8em; text-align: left; }
+        .story-content th { background: #f1f5f9; font-weight: 600; }
+        .story-content hr { border: none; border-top: 2px solid #e2e8f0; margin: 1.2em 0; }
+        .story-content strong { color: #1e293b; }
+        .story-content a { color: #7c3aed; text-decoration: underline; }
+        .story-content img { max-width: 100%; border-radius: 8px; margin: 0.5em 0; }
         .scrollbar-thin::-webkit-scrollbar { width: 6px; }
         .scrollbar-thin::-webkit-scrollbar-track { background: #f1f5f9; }
         .scrollbar-thin::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px; }
@@ -319,9 +338,7 @@
                             <h2 class="text-lg font-semibold mb-4 flex items-center truncate">
                                 <i class="fa-solid fa-book text-green-500 mr-2 shrink-0"></i>{{currentTitle || '故事内容'}}
                             </h2>
-                            <div v-if="storyContent" class="story-content text-gray-700 text-base scrollbar-thin h-[400px] overflow-y-auto break-words">
-                                {{storyContent}}
-                            </div>
+                            <div v-if="storyContent" class="story-content text-gray-700 text-base scrollbar-thin h-[400px] overflow-y-auto break-words" v-html="renderMarkdown(storyContent)"></div>
                             <div v-else class="flex flex-col items-center justify-center h-[400px] text-gray-400">
                                 <i class="fa-solid fa-file-lines text-6xl mb-4"></i>
                                 <p>故事将在这里生成</p>
@@ -674,12 +691,17 @@
                             <p class="text-sm text-gray-500 mt-1">{{selectedStory?.genre}} · {{selectedStory?.style}}</p>
                         </div>
                         <div class="flex items-center gap-2 shrink-0 ml-2">
-                            <button v-if="!isEditing" @click="editContent = selectedStory?.content; isEditing = true" class="text-purple-500 hover:text-purple-700 flex items-center gap-1 text-sm font-medium">
+                            <button v-if="!isEditing" @click="editContent = selectedStory?.content; isEditing = true; showEditPreview = false" class="text-purple-500 hover:text-purple-700 flex items-center gap-1 text-sm font-medium">
                                 编辑<i class="fa-regular fa-pen-to-square ml-1"></i>
                             </button>
-                            <button v-else @click="isEditing = false" class="text-gray-400 hover:text-gray-600 flex items-center gap-1 text-sm font-medium">
-                                取消编辑<i class="fa-solid fa-xmark ml-1"></i>
-                            </button>
+                            <template v-else>
+                                <button @click="showEditPreview = !showEditPreview" :class="['flex items-center gap-1 text-sm font-medium', showEditPreview ? 'text-purple-600' : 'text-gray-500']">
+                                    <i :class="showEditPreview ? 'fa-solid fa-eye' : 'fa-solid fa-code'"></i>{{showEditPreview ? '预览' : '源码'}}
+                                </button>
+                                <button @click="isEditing = false; showEditPreview = false" class="text-gray-400 hover:text-gray-600 flex items-center gap-1 text-sm font-medium">
+                                    取消<i class="fa-solid fa-xmark ml-1"></i>
+                                </button>
+                            </template>
                             <button @click="showStoryDetail = false" class="text-gray-400 hover:text-gray-600">
                                 <i class="fa-solid fa-xmark text-xl"></i>
                             </button>
@@ -687,8 +709,9 @@
                     </div>
                 </div>
                 <div class="p-6 overflow-y-auto max-h-[60vh] story-content text-gray-700">
-                    <div v-if="!isEditing">{{selectedStory?.content}}</div>
-                    <textarea v-else v-model="editContent" rows="15" class="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-purple-500 outline-none font-mono text-sm"></textarea>
+                    <div v-if="!isEditing" v-html="renderMarkdown(selectedStory?.content)"></div>
+                    <textarea v-else-if="!showEditPreview" v-model="editContent" rows="15" class="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-purple-500 outline-none font-mono text-sm resize-none"></textarea>
+                    <div v-else class="story-content" v-html="renderMarkdown(editContent)"></div>
                 </div>
                 <div v-if="isEditing" class="p-6 border-t flex justify-end">
                     <button @click="updateStory" class="px-6 py-2.5 bg-gradient-to-r from-purple-600 to-indigo-600 text-white rounded-xl hover:from-purple-700 hover:to-indigo-700 transition font-medium shadow-md">
@@ -929,9 +952,7 @@
                                 </button>
                             </div>
                         </div>
-                        <div class="story-content text-sm text-gray-700 max-h-80 overflow-y-auto whitespace-pre-wrap bg-white rounded-lg p-4 border">
-                            {{previewChapter.content || '(暂无内容)'}}
-                        </div>
+                        <div class="story-content text-sm text-gray-700 max-h-80 overflow-y-auto bg-white rounded-lg p-4 border" v-html="renderMarkdown(previewChapter.content || '*(暂无内容)*')"></div>
                     </div>
                 </div>
                 <!-- Footer -->
@@ -1097,6 +1118,7 @@
                 const selectedStory = ref(null)
                 const isEditing = ref(false)
                 const editContent = ref('')
+                const showEditPreview = ref(false)
                 const selectedTemplate = ref(null)
                 const isGenerating = ref(false)
                 const savingKey = ref(false)
@@ -1903,6 +1925,7 @@
                     selectedStory.value = story
                     editContent.value = story.content
                     isEditing.value = false
+                    showEditPreview.value = false
                     showStoryDetail.value = true
                 }
 
@@ -2159,6 +2182,7 @@
                     if (previewChapter.value) {
                         selectedStory.value = previewChapter.value
                         isEditing.value = false
+                        showEditPreview.value = false
                         editContent.value = ''
                         showStoryDetail.value = true
                     }
@@ -2184,6 +2208,18 @@
                     } finally {
                         savingKey.value = false
                     }
+                }
+
+                const renderMarkdown = (text) => {
+                    if (!text) return ''
+                    try {
+                        if (typeof marked !== 'undefined') {
+                            return marked.parse(text, { breaks: true, gfm: true })
+                        }
+                    } catch (e) {
+                        console.error('Markdown parse error:', e)
+                    }
+                    return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\n/g, '<br>')
                 }
 
                 const formatDate = (dateStr) => {
@@ -2306,14 +2342,14 @@
 
                 return {
                     currentTab, showSettings, showStoryDetail, showCharacterModal, showCharacterAddModal, showTemplateModal,
-                    selectedStory, isEditing, editContent, selectedTemplate, isGenerating, savingKey,
+                    selectedStory, isEditing, editContent, showEditPreview, selectedTemplate, isGenerating, savingKey,
                     storyContent, currentTitle, apiKey, newCharacter,
                     genres, styles, perspectives, conflicts, moods,
                     storyForm, charactersList, foreshadowings, history, agents,
                     characterTemplates, storyTemplates,
                     works, showWorkDetail, selectedWork, selectedWorkChapters, workForm, generatingSummary,
                     getAgentClass, getAgentIcon, formatAgentData,
-                    generateStory, saveStory, copyStory, loadHistory,
+                    generateStory, saveStory, copyStory, loadHistory, renderMarkdown,
                     viewStory, toggleFavorite, updateStory, deleteStory, saveApiKey, formatDate,
                     addCharacter, addCharacterFromTemplate, addCharacterConfirm, cancelCharacterAdd, applyStoryTemplate,
                     removeCharacter, addForeshadowing, removeForeshadowing, continueStory,

@@ -31,7 +31,7 @@ Thumbs.db
 # 数据文件（含生成内容，不纳入版本控制）
 backend/data/stories.json
 backend/data/works.json
-backend/data/*.bak
+backend/data/*.bak*
 output/
 *.png
 *.jpg
