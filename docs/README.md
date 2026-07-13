@@ -97,3 +97,8 @@ python -m pytest backend/tests/ -v
 - Python 3.9+
 - 依赖：`pip install -r requirements.txt`
 - DeepSeek API Key（在页面设置中配置或写入 .env 文件）
+
+  <img width="484" height="297" alt="image" src="https://github.com/user-attachments/assets/c6f6d3dc-c4a2-4598-b7db-ed5f805d91fb" />
+
+  可在设置中修改apikey的配置
+
