@@ -1,81 +1,123 @@
-# TaleForge - AI 智能故事生成器
+# TaleForge - 智能故事生成器
 
-基于 DeepSeek 大模型的多智能体协作故事生成系统。输入主题，一键生成高质量叙事内容。
+## 项目简介
 
-## 快速开始
+TaleForge 是一个基于 AI 多智能体协作架构的智能故事生成器。用户输入故事主题和参数，系统通过策划（Planner）、角色（Character）、写作（Writer）、润色（Polisher）四个智能体的协同工作，生成高质量的叙事内容。
 
-```bash
-git clone https://github.com/Atomiy/taleforge.git
-cd taleforge
-python start.py          # 或双击 start.bat
-```
-
-首次运行自动创建虚拟环境、安装依赖、引导配置 API Key。  
-浏览器打开 `http://127.0.0.1:8080`
+---
 
 ## 核心功能
 
 | 功能 | 说明 |
 |------|------|
-| **AI 故事生成** | 多智能体协作（策划→角色→写作→润色），SSE 实时流式输出 |
-| **Markdown 渲染** | 生成内容支持标题、粗体、代码块等格式，即时预览 |
-| **编辑/预览切换** | 类似 Obsidian 的源码/预览双模式，编辑时实时预览 |
-| **多体裁风格** | 短篇/中篇/科幻/奇幻/悬疑/童话/诗歌等 10+ 体裁，10 种风格 |
-| **角色系统** | 模板库 15 个预设角色 + 自定义添加，含外貌/性格/背景/动机 |
-| **世界观 & 伏笔** | 自定义世界设定，显式伏笔管理，AI 自动埋设与回收 |
-| **创作模板** | 8 套预设模板（英雄之旅、悬疑推理、都市爱情等），一键套用 |
-| **作品管理** | 卷/章结构、跨章角色出场表、批量生成、概要生成 |
-| **续写** | 基于前作上下文自动延续，保持人物和情节连贯 |
-| **AI 灵感** | 根据设定智能推荐剧情方向、伏笔和角色 |
-| **历史管理** | 搜索、分页、体裁筛选、收藏标记、编辑、导出 Markdown/TXT |
-| **一键启动** | `start.py` 自动检查环境、安装依赖、配置密钥、启动服务 |
+| **故事生成** | 输入主题、体裁、风格、字数等参数，AI 自动生成完整故事 |
+| **多体裁支持** | 短篇小说、中篇小说、科幻、奇幻、悬疑推理、童话、诗歌等 |
+| **角色设定** | 自定义添加角色，支持从模板快速选择，含名称/年龄/身份/外貌/性格/背景/动机 |
+| **世界观设定** | 详细描述架空世界观，生成内容自动融入世界设定 |
+| **剧情设置** | 背景、叙事视角、冲突类型、情感基调、故事梗概 |
+| **伏笔管理** | 显式定义伏笔，在生成中自动埋设与回收 |
+| **续写功能** | 基于前作继续生成后续章节，保持情节连贯 |
+| **创作模板** | 8 种预设模板（英雄之旅、悬疑推理、都市爱情等），一键应用 |
+| **收藏标记** | 收藏喜欢的故事，快速筛选查看 |
+| **故事编辑** | 编辑模式下支持源码/预览实时切换，修改后即时渲染 |
+| **导出下载** | 导出为 Markdown / 纯文本格式 |
+| **历史记录** | 搜索、分页、按体裁筛选、收藏筛选 |
+| **实时流式输出** | SSE 技术，生成过程实时显示在页面 |
+| **Markdown 渲染** | 故事内容支持标题、粗体、代码块等格式，即时渲染 |
+| **一键启动** | `start.py` 自动创建虚拟环境、安装依赖、引导配置 API Key |
 
-## 技术栈
+---
 
-| 层 | 技术 |
-|----|------|
-| 前端 | Vue 3 (CDN) + Tailwind CSS + Font Awesome |
-| 后端 | FastAPI + Uvicorn (Python) |
-| AI | DeepSeek API (Chat Completions) |
-| 数据 | JSON 文件存储 |
-| Markdown | 自研纯 JS 渲染器（零依赖） |
+## 技术架构
 
-## 智能体流程
+```mermaid
+flowchart TB
+    subgraph Frontend["前端 (Vue 3 + Tailwind CSS)"]
+        UI[index.html 单页应用]
+    end
+
+    subgraph Backend["后端 (FastAPI + Uvicorn)"]
+        Router["路由层 (story / history / config / works)"]
+        Svc["服务层 (LLMClient / HistoryManager)"]
+        Orch["多智能体协调器"]
+        Router --> Svc --> Orch
+    end
+
+    subgraph Agents["智能体"]
+        Planner["Planner 策划"]
+        Char["Character 角色"]
+        Writer["Writer 写作"]
+        Polish["Polisher 润色"]
+        Planner --> Char --> Writer --> Polish
+    end
+
+    subgraph External["外部服务"]
+        DeepSeek["DeepSeek API"]
+    end
+
+    subgraph Storage["数据存储"]
+        JSON["stories.json / works.json"]
+    end
+
+    UI <-->|"HTTP / SSE"| Router
+    Orch --> Agents
+    Orch <-->|"API 调用"| DeepSeek
+    Svc <--> JSON
+```
+
+### 智能体协作流程
 
 ```mermaid
 flowchart LR
-    Input["用户输入"] --> P["Planner<br/>策划大纲"]
-    P --> C["Character<br/>角色深化"]
+    Input["用户输入<br/>主题/体裁/风格"] --> P["Planner<br/>策划故事大纲"]
+    P --> C["Character<br/>深化角色设定"]
     C --> W["Writer<br/>流式写作"]
     W --> Pol["Polisher<br/>润色整合"]
-    Pol --> Output["输出故事"]
+    Pol --> Output["输出完整故事"]
 ```
 
-## 环境要求
+每个智能体通过 SSE 事件流实时反馈状态和阶段性结果。
+
+---
+
+## 启动方式
+
+```bash
+# 方式1：Python 启动器（推荐）
+python start.py
+
+# 方式2：双击 start.bat
+```
+
+启动器自动完成：虚拟环境创建 → 依赖安装 → API Key 配置引导 → 端口清理 → 启动服务器。  
+换电脑后只需拷贝项目文件夹，双击 `start.bat` 即可运行。
+
+访问：http://127.0.0.1:8080
+
+---
+
+## 运行测试
+
+```bash
+# 后端 API 测试（20 项）
+python -m pytest backend/tests/test_api.py -v
+
+# 前端 E2E 测试（15 项 - 需 Playwright）
+python -m pytest backend/tests/test_frontend.py -v
+
+# 全部测试
+python -m pytest backend/tests/ -v
+```
+
+---
+
+## 环境需求
 
 - Python 3.9+
-- DeepSeek API Key（[获取地址](https://platform.deepseek.com)）
+- 依赖：`pip install -r requirements.txt`
+- DeepSeek API Key（在页面设置中配置或写入 .env 文件）
 
-## 项目结构
+  <img width="484" height="297" alt="image" src="https://github.com/user-attachments/assets/c6f6d3dc-c4a2-4598-b7db-ed5f805d91fb" />
 
-```
-taleforge/
-├── start.py              # 一键启动器（自动配置环境）
-├── start.bat             # Windows 双击启动
-├── requirements.txt      # Python 依赖
-├── backend/
-│   ├── agents/           # 智能体（Planner/Character/Writer/Polisher）
-│   ├── routers/          # API 路由（story/history/config/works）
-│   ├── services/         # 服务层（LLM客户端/编排器/历史管理）
-│   ├── models/           # 数据模型
-│   └── config.py         # 配置管理
-├── frontend/
-│   ├── index.html        # 单页应用（Vue 3）
-│   ├── components/       # Vue 组件
-│   └── assets/           # 静态资源
-└── docs/                 # 文档
-```
+  可在设置中修改apikey的配置
 
-## License
-
-MIT
