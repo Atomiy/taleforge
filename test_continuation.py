@@ -5,7 +5,7 @@ import requests, json, sys, io
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
 
 BASE = "http://127.0.0.1:8080/api/v1"
-requests.post(f"{BASE}/config/api-key", json={"api_key":"sk-5307150833c94e6995fc8996daa557b4"})
+requests.post(f"{BASE}/config/api-key", json={"api_key":"sk-your-deepseek-api-key"})
 
 # 1. 先保存一篇故事
 r = requests.post(f"{BASE}/story/save", json={

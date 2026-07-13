@@ -8,7 +8,7 @@ os.environ["PYTHONIOENCODING"] = "utf-8"
 import io
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
 BASE = "http://127.0.0.1:8080/api/v1"
-KEY = "sk-5307150833c94e6995fc8996daa557b4"
+KEY = "sk-your-deepseek-api-key"
 REPORT = r"C:\Users\33173\Desktop\study\taleforge\guide file\三部曲验证报告.md"
 
 def log(m): 

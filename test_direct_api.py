@@ -4,7 +4,7 @@
 import os, json, requests, sys, io
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
 
-API_KEY = "sk-5307150833c94e6995fc8996daa557b4"
+API_KEY = "sk-your-deepseek-api-key"
 BASE = "https://api.deepseek.com/v1"
 
 # 模拟续写 prompt
