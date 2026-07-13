@@ -1,0 +1,2347 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TaleForge - 智能故事生成器</title>
+    <script src="./assets/js/vue.global.prod.js"></script>
+    <script src="./assets/js/tailwindcss.js"></script>
+    <link href="./assets/css/font-awesome.css" rel="stylesheet">
+    <style>
+        body { font-family: 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif; }
+        .agent-card { transition: all 0.3s ease; }
+        .agent-running { animation: pulse 1.5s infinite; }
+        .agent-done { border-color: #10b981; background-color: rgba(16, 185, 129, 0.1); }
+        .agent-writing { animation: typing 1s infinite; }
+        @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
+        @keyframes typing { 0%, 100% { border-color: #3b82f6; } 50% { border-color: #93c5fd; } }
+        .story-content { white-space: pre-wrap; line-height: 1.8; }
+        .scrollbar-thin::-webkit-scrollbar { width: 6px; }
+        .scrollbar-thin::-webkit-scrollbar-track { background: #f1f5f9; }
+        .scrollbar-thin::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px; }
+        .fade-enter-active, .fade-leave-active { transition: opacity 0.3s; }
+        .fade-enter-from, .fade-leave-to { opacity: 0; }
+        .character-relationship { display: inline-flex; align-items: center; gap: 4px; margin-right: 8px; margin-bottom: 4px; padding: 2px 8px; background: #f0fdf4; border-radius: 12px; font-size: 12px; color: #166534; }
+        .template-tag { display: inline-block; padding: 2px 8px; background: #eef2ff; border-radius: 8px; font-size: 11px; color: #4f46e5; margin-right: 4px; margin-bottom: 4px; }
+        .toast-container { position: fixed; top: 20px; right: 20px; z-index: 9999; display: flex; flex-direction: column; gap: 8px; }
+        .toast { padding: 12px 20px; border-radius: 12px; color: #fff; font-size: 14px; font-weight: 500; box-shadow: 0 4px 12px rgba(0,0,0,0.15); transform: translateX(120%); transition: transform 0.3s ease; max-width: 360px; }
+        .toast.show { transform: translateX(0); }
+        .toast-success { background: linear-gradient(135deg, #10b981, #059669); }
+        .toast-error { background: linear-gradient(135deg, #ef4444, #dc2626); }
+        .toast-info { background: linear-gradient(135deg, #3b82f6, #2563eb); }
+        .toast-warning { background: linear-gradient(135deg, #f59e0b, #d97706); }
+    </style>
+</head>
+<body class="bg-gradient-to-br from-purple-50 via-blue-50 to-indigo-50 min-h-screen">
+    <div id="app" class="min-h-screen">
+        <div class="toast-container" id="toast-container"></div>
+        <nav class="bg-white/80 backdrop-blur-md shadow-sm sticky top-0 z-50">
+            <div class="max-w-7xl mx-auto px-4 py-3 flex items-center justify-between">
+                <div class="flex items-center gap-2">
+                    <i class="fa-solid fa-book-open text-purple-600 text-2xl"></i>
+                    <h1 class="text-xl font-bold bg-gradient-to-r from-purple-600 to-indigo-600 bg-clip-text text-transparent">TaleForge</h1>
+                </div>
+                <div class="flex items-center gap-4">
+                    <button @click="currentTab = 'create'" :class="['px-4 py-2 rounded-lg transition', currentTab === 'create' ? 'bg-purple-100 text-purple-700' : 'hover:bg-gray-100']">
+                        <i class="fa-solid fa-pen-to-square mr-2"></i>创作
+                    </button>
+                    <button @click="loadWorks(); currentTab = 'works'" :class="['px-4 py-2 rounded-lg transition', currentTab === 'works' ? 'bg-purple-100 text-purple-700' : 'hover:bg-gray-100']">
+                        <i class="fa-solid fa-layer-group mr-2"></i>作品
+                    </button>
+                    <button @click="loadHistory(); currentTab = 'history'" :class="['px-4 py-2 rounded-lg transition', currentTab === 'history' ? 'bg-purple-100 text-purple-700' : 'hover:bg-gray-100']">
+                        <i class="fa-solid fa-history mr-2"></i>历史
+                    </button>
+                    <button @click="showSettings = true" class="px-4 py-2 rounded-lg hover:bg-gray-100 transition flex items-center gap-2">
+                        <i class="fa-solid fa-gear"></i>
+                        <span>设置</span>
+                    </button>
+                </div>
+            </div>
+        </nav>
+
+        <div class="max-w-7xl mx-auto px-4 py-6">
+            <div v-if="currentTab === 'create'" class="space-y-6">
+                <div class="bg-white rounded-2xl shadow-lg p-6">
+                    <div class="flex items-center justify-between mb-4">
+                        <h2 class="text-lg font-semibold flex items-center">
+                            <i class="fa-solid fa-clapperboard text-purple-500 mr-2"></i>创作模板
+                        </h2>
+                        <button @click="showTemplateModal = true" class="text-sm text-purple-600 hover:text-purple-800 flex items-center gap-1">
+                            <i class="fa-solid fa-plus"></i>使用模板
+                        </button>
+                    </div>
+                    <div v-if="selectedTemplate" class="bg-gradient-to-r from-purple-50 to-indigo-50 rounded-xl p-4 border border-purple-100">
+                        <div class="flex items-center justify-between mb-2">
+                            <span class="font-medium text-purple-800">{{selectedTemplate.name}}</span>
+                            <button @click="selectedTemplate = null" class="text-gray-400 hover:text-gray-600"><i class="fa-solid fa-xmark"></i></button>
+                        </div>
+                        <p class="text-sm text-purple-600">{{selectedTemplate.description}}</p>
+                        <div class="mt-2 flex flex-wrap gap-2">
+                            <span v-for="tag in selectedTemplate.tags" :key="tag" class="template-tag">{{tag}}</span>
+                        </div>
+                    </div>
+                    <div v-else class="text-center py-4 text-gray-400">
+                        <i class="fa-solid fa-lightbulb text-3xl mb-2"></i>
+                        <p class="text-sm">选择一个创作模板快速开始，或直接填写下方内容</p>
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                    <div class="lg:col-span-1 space-y-6">
+                        <div class="bg-white rounded-2xl shadow-lg p-6">
+                            <h2 class="text-lg font-semibold mb-4 flex items-center">
+                                <i class="fa-solid fa-sliders text-purple-500 mr-2"></i>基本设置
+                            </h2>
+                            <div class="space-y-4">
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-1">故事主题</label>
+                                    <input v-model="storyForm.theme" type="text" placeholder="输入故事主题或关键词" 
+                                        class="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-purple-500 focus:border-transparent outline-none transition">
+                                </div>
+                                <div class="grid grid-cols-2 gap-3">
+                                    <div>
+                                        <label class="block text-sm font-medium text-gray-700 mb-1">体裁</label>
+                                        <select v-model="storyForm.genre" class="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-purple-500 outline-none">
+                                            <option v-for="g in genres" :key="g" :value="g">{{g}}</option>
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label class="block text-sm font-medium text-gray-700 mb-1">风格</label>
+                                        <select v-model="storyForm.style" class="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-purple-500 outline-none">
+                                            <option v-for="s in styles" :key="s" :value="s">{{s}}</option>
+                                        </select>
+                                    </div>
+                                </div>
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-1">目标字数</label>
+                                    <div class="flex items-center gap-3">
+                                        <input v-model.number="storyForm.length" type="range" min="500" max="20000" step="500"
+                                            class="flex-1 h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-purple-600">
+                                        <input v-model.number="storyForm.length" type="number" min="500" max="50000" step="500"
+                                            class="w-20 px-2 py-1.5 border border-gray-200 rounded-lg text-sm text-center focus:ring-2 focus:ring-purple-500 outline-none">
+                                    </div>
+                                    <div class="text-center text-sm text-gray-500">{{storyForm.length >= 1000 ? (storyForm.length/1000).toFixed(1) + 'k' : storyForm.length}} 字</div>
+                                </div>
+                                <div v-if="works.length > 0">
+                                    <label class="block text-sm font-medium text-gray-700 mb-1">所属作品（可选）</label>
+                                    <select v-model="storyForm.work_id" class="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-purple-500 outline-none">
+                                        <option value="">-- 不归属作品 --</option>
+                                        <option v-for="w in works" :key="w.id" :value="w.id">{{w.title}}</option>
+                                    </select>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="bg-white rounded-2xl shadow-lg p-6">
+                            <h2 class="text-lg font-semibold mb-4 flex items-center">
+                                <i class="fa-solid fa-globe text-indigo-500 mr-2"></i>剧情设置
+                            </h2>
+                            <div class="space-y-4">
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-1">故事背景</label>
+                                    <textarea v-model="storyForm.background" rows="3" placeholder="描述故事发生的时代、地点、社会背景等" 
+                                        class="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-purple-500 focus:border-transparent outline-none transition resize-none"></textarea>
+                                </div>
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-1">叙事视角</label>
+                                    <select v-model="storyForm.perspective" class="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-purple-500 outline-none">
+                                        <option v-for="p in perspectives" :key="p" :value="p">{{p}}</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-1">冲突类型</label>
+                                    <select v-model="storyForm.conflict" class="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-purple-500 outline-none">
+                                        <option v-for="c in conflicts" :key="c" :value="c">{{c}}</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-1">情感基调</label>
+                                    <select v-model="storyForm.mood" class="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-purple-500 outline-none">
+                                        <option v-for="m in moods" :key="m" :value="m">{{m}}</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-1">故事梗概</label>
+                                    <textarea v-model="storyForm.outline" rows="3" placeholder="简要描述故事的大致情节和走向" 
+                                        class="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-purple-500 focus:border-transparent outline-none transition resize-none"></textarea>
+                                </div>
+                                <button @click="getInspiration" :disabled="isInspiring || !storyForm.theme.trim()"
+                                    class="w-full px-3 py-2 bg-gradient-to-r from-purple-500 to-indigo-500 text-white rounded-xl hover:from-purple-600 hover:to-indigo-600 transition disabled:opacity-50 flex items-center justify-center gap-2 text-sm">
+                                    <i :class="isInspiring ? 'fa-solid fa-spinner animate-spin' : 'fa-solid fa-lightbulb'"></i>
+                                    {{ isInspiring ? 'AI 思考中...' : 'AI 给我灵感' }}
+                                </button>
+                            </div>
+                        </div>
+
+                        <div class="bg-white rounded-2xl shadow-lg p-6">
+                            <h2 class="text-lg font-semibold mb-4 flex items-center">
+                                <i class="fa-solid fa-book-open text-cyan-500 mr-2"></i>世界观设定
+                            </h2>
+                            <div class="space-y-4">
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-1">世界背景</label>
+                                    <textarea v-model="storyForm.world_setting" rows="4" placeholder="详细描述故事所处的世界，包括地理、种族、魔法体系、历史背景等..." 
+                                        class="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-purple-500 focus:border-transparent outline-none transition resize-none"></textarea>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="bg-white rounded-2xl shadow-lg p-6">
+                            <div class="flex items-center justify-between mb-4">
+                                <h2 class="text-lg font-semibold flex items-center">
+                                    <i class="fa-solid fa-lightbulb text-yellow-500 mr-2"></i>伏笔管理
+                                </h2>
+                                <button @click="addForeshadowing" class="text-sm text-purple-600 hover:text-purple-800 flex items-center gap-1">
+                                    <i class="fa-solid fa-plus"></i>添加伏笔
+                                </button>
+                            </div>
+                            <div v-if="foreshadowings.length === 0" class="border-2 border-dashed border-gray-200 rounded-xl p-4 text-center text-gray-400">
+                                <i class="fa-solid fa-lightbulb text-3xl mb-2"></i>
+                                <p>暂无伏笔，点击上方添加</p>
+                                <p class="text-xs mt-1">伏笔可以是未解开的谜题、隐藏的秘密或未来的线索</p>
+                            </div>
+                            <div v-else class="space-y-2">
+                                <div v-for="(item, index) in foreshadowings" :key="index" 
+                                    class="flex items-center gap-3 bg-gray-50 rounded-lg p-3">
+                                    <input v-model="foreshadowings[index]" type="text" placeholder="输入伏笔内容" 
+                                        class="flex-1 px-3 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-purple-500 outline-none text-sm">
+                                    <button @click="removeForeshadowing(index)" class="text-red-500 hover:text-red-700">
+                                        <i class="fa-solid fa-trash"></i>
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="bg-white rounded-2xl shadow-lg p-6">
+                            <div class="flex items-center justify-between mb-4">
+                                <h2 class="text-lg font-semibold flex items-center">
+                                    <i class="fa-solid fa-users text-pink-500 mr-2"></i>角色设定</h2>
+                                <div class="flex items-center gap-2">
+                                    <button @click="showCharacterAddModal = true" class="text-sm text-indigo-600 hover:text-indigo-800 flex items-center gap-1">
+                                        <i class="fa-solid fa-user-plus"></i>自定义添加
+                                    </button>
+                                    <button @click="showCharacterModal = true" class="text-sm text-purple-600 hover:text-purple-800 flex items-center gap-1">
+                                        <i class="fa-solid fa-plus"></i>从模板添加
+                                    </button>
+                                </div>
+                            </div>
+                            <div v-if="charactersList.length === 0" class="border-2 border-dashed border-gray-200 rounded-xl p-4 text-center text-gray-400">
+                                <i class="fa-solid fa-users text-3xl mb-2"></i>
+                                <p>暂无角色，点击上方添加</p>
+                            </div>
+                            <div v-else class="space-y-3">
+                                <div v-for="(char, index) in charactersList" :key="index" 
+                                    class="bg-gray-50 rounded-xl p-4 border border-gray-100">
+                                    <div class="flex items-center justify-between mb-3">
+                                        <div class="flex items-center gap-2">
+                                            <span class="text-sm font-medium text-gray-700">角色 {{index + 1}}</span>
+                                            <span v-if="char.is_template" class="text-xs px-2 py-0.5 bg-purple-100 text-purple-600 rounded-full">模板</span>
+                                        </div>
+                                        <button @click="removeCharacter(index)" class="text-red-500 hover:text-red-700">
+                                            <i class="fa-solid fa-trash"></i>
+                                        </button>
+                                    </div>
+                                    <div class="grid grid-cols-2 gap-3">
+                                        <input v-model="char.name" type="text" placeholder="角色名称" 
+                                            class="w-full px-3 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-purple-500 outline-none text-sm">
+                                        <input v-model="char.age" type="text" placeholder="年龄" 
+                                            class="w-full px-3 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-purple-500 outline-none text-sm">
+                                    </div>
+                                    <input v-model="char.identity" type="text" placeholder="身份/职业" 
+                                        class="w-full px-3 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-purple-500 outline-none text-sm mt-2">
+                                    <input v-model="char.appearance" type="text" placeholder="外貌特征" 
+                                        class="w-full px-3 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-purple-500 outline-none text-sm mt-2">
+                                    <textarea v-model="char.personality" rows="2" placeholder="性格特点" 
+                                        class="w-full px-3 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-purple-500 outline-none text-sm mt-2 resize-none"></textarea>
+                                    <textarea v-model="char.background" rows="2" placeholder="背景故事" 
+                                        class="w-full px-3 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-purple-500 outline-none text-sm mt-2 resize-none"></textarea>
+                                    <textarea v-model="char.motivation" rows="2" placeholder="角色动机/目标" 
+                                        class="w-full px-3 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-purple-500 outline-none text-sm mt-2 resize-none"></textarea>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="flex gap-2">
+                            <button @click="generateStory" :disabled="isGenerating || !storyForm.theme.trim()"
+                                :class="['flex-1 py-3 rounded-xl font-semibold flex items-center justify-center gap-2 transition', 
+                                    isGenerating ? 'bg-gray-400 cursor-not-allowed' : 'bg-gradient-to-r from-purple-600 to-indigo-600 text-white hover:from-purple-700 hover:to-indigo-700 shadow-lg hover:shadow-xl']">
+                                <i v-if="isGenerating" class="fa-solid fa-spinner animate-spin"></i>
+                                <i v-else class="fa-solid fa-magic"></i>
+                                {{ isGenerating ? '生成中...' : '开始生成' }}
+                            </button>
+                            <button @click="clearFormState" :disabled="isGenerating"
+                                class="px-4 py-3 border border-gray-200 rounded-xl text-gray-500 hover:bg-gray-50 transition text-sm" title="清空表单">
+                                <i class="fa-solid fa-eraser"></i>
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="lg:col-span-2 space-y-6">
+                        <div class="bg-white rounded-2xl shadow-lg p-6">
+                            <h2 class="text-lg font-semibold mb-4 flex items-center">
+                                <i class="fa-solid fa-users text-indigo-500 mr-2"></i>智能体协作面板
+                            </h2>
+                            <!-- Progress bar (P3-08) -->
+                            <div v-if="isGenerating" class="mb-4">
+                                <div class="flex items-center justify-between text-xs text-gray-500 mb-1.5">
+                                    <span>{{generationStepLabel}}</span>
+                                    <span>{{generationProgress}}%</span>
+                                </div>
+                                <div class="w-full h-2 bg-gray-200 rounded-full overflow-hidden">
+                                    <div class="h-full bg-gradient-to-r from-purple-500 to-indigo-500 rounded-full transition-all duration-500 ease-out" :style="{ width: generationProgress + '%' }"></div>
+                                </div>
+                            </div>
+                            <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+                                <div v-for="agent in agents" :key="agent.name" 
+                                    :class="['agent-card p-4 rounded-xl border-2', getAgentClass(agent)]">
+                                    <div class="flex items-center justify-between mb-2">
+                                        <span class="font-medium text-gray-700">{{agent.label}}</span>
+                                        <i :class="['fa-solid', getAgentIcon(agent)]"></i>
+                                    </div>
+                                    <div class="text-sm text-gray-500">{{agent.message}}</div>
+                                    <div v-if="agent.expanded && agent.data" class="mt-3 p-2 bg-gray-50 rounded-lg text-xs font-mono max-h-32 overflow-auto">
+                                        {{formatAgentData(agent.data)}}
+                                    </div>
+                                    <button v-if="agent.status === 'done'" @click="agent.expanded = !agent.expanded" 
+                                        class="mt-2 text-xs text-purple-600 hover:text-purple-800">
+                                        {{agent.expanded ? '收起' : '查看详情'}}
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="bg-white rounded-2xl shadow-lg p-6 min-h-[400px]">
+                            <h2 class="text-lg font-semibold mb-4 flex items-center">
+                                <i class="fa-solid fa-book text-green-500 mr-2"></i>{{currentTitle || '故事内容'}}
+                            </h2>
+                            <div v-if="storyContent" class="story-content text-gray-700 text-base scrollbar-thin h-[400px] overflow-y-auto">
+                                {{storyContent}}
+                            </div>
+                            <div v-else class="flex flex-col items-center justify-center h-[400px] text-gray-400">
+                                <i class="fa-solid fa-file-lines text-6xl mb-4"></i>
+                                <p>故事将在这里生成</p>
+                            </div>
+                            <div v-if="storyContent" class="mt-4 flex flex-wrap gap-2">
+                                <button @click="saveStory" class="px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 transition flex items-center gap-2">
+                                    <i class="fa-solid fa-save"></i>保存
+                                </button>
+                                <button @click="copyStory" class="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition flex items-center gap-2">
+                                    <i class="fa-solid fa-copy"></i>复制
+                                </button>
+                                <!-- 生成后操作栏：有工作关联时显示 -->
+                                <template v-if="storyForm.work_id && !isGenerating">
+                                    <button @click="continueNextChapter" class="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition flex items-center gap-2">
+                                        <i class="fa-solid fa-forward"></i>续写下一章
+                                    </button>
+                                    <button @click="backToWorkDetail" class="px-4 py-2 bg-purple-100 text-purple-700 rounded-lg hover:bg-purple-200 transition flex items-center gap-2">
+                                        <i class="fa-solid fa-reply"></i>返回作品
+                                    </button>
+                                </template>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div v-if="currentTab === 'works'" class="space-y-6">
+                <!-- Creation card -->
+                <div class="bg-white rounded-2xl shadow-lg p-6">
+                    <h2 class="text-lg font-semibold mb-4"><i class="fa-solid fa-plus-circle text-purple-500 mr-2"></i>创建新作品</h2>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">作品名称</label>
+                            <input v-model="workForm.title" placeholder="输入作品名称" class="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-purple-500 outline-none">
+                        </div>
+                        <div class="grid grid-cols-2 gap-3">
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-1">体裁</label>
+                                <select v-model="workForm.genre" class="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-purple-500 outline-none">
+                                    <option v-for="g in genres" :key="g" :value="g">{{g}}</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-1">风格</label>
+                                <select v-model="workForm.style" class="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-purple-500 outline-none">
+                                    <option v-for="s in styles" :key="s" :value="s">{{s}}</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">世界观设定</label>
+                            <textarea v-model="workForm.world_setting" rows="4" placeholder="输入世界观设定..." class="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-purple-500 outline-none"></textarea>
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">大纲</label>
+                            <textarea v-model="workForm.outline" rows="4" placeholder="输入故事大纲..." class="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-purple-500 outline-none"></textarea>
+                        </div>
+                    </div>
+                    <button @click="createWork" class="px-6 py-2.5 bg-gradient-to-r from-purple-600 to-indigo-600 text-white rounded-xl hover:from-purple-700 hover:to-indigo-700 transition font-medium shadow-md">
+                        <i class="fa-solid fa-plus mr-2"></i>创建作品
+                    </button>
+                </div>
+
+                <!-- Works list -->
+                <div class="bg-white rounded-2xl shadow-lg p-6">
+                    <div class="flex items-center justify-between mb-4">
+                        <h2 class="text-lg font-semibold"><i class="fa-solid fa-layer-group text-purple-500 mr-2"></i>我的作品</h2>
+                        <div class="relative">
+                            <i class="fa-solid fa-search absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm"></i>
+                            <input v-model="workSearchQuery" type="text" placeholder="搜索作品..."
+                                class="pl-9 pr-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-purple-500 outline-none text-sm w-48">
+                        </div>
+                    </div>
+                    <div v-if="filteredWorks.length === 0" class="text-center py-12 text-gray-400">
+                        <i class="fa-solid fa-book text-5xl mb-3"></i>
+                        <p>还没有创建作品，开始创作你的第一部史诗吧！</p>
+                    </div>
+                    <div v-else class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div v-for="work in filteredWorks" :key="work.id" class="border border-gray-200 rounded-xl p-4 hover:shadow-md transition">
+                            <div class="flex items-start justify-between">
+                                <div class="flex-1">
+                                    <h3 class="font-semibold text-gray-800">{{work.title}}</h3>
+                                    <div class="flex flex-wrap gap-2 mt-2">
+                                        <span class="template-tag">{{work.genre}}</span>
+                                        <span class="template-tag">{{work.style}}</span>
+                                        <span class="template-tag">{{work.chapter_ids?.length || 0}} 章</span>
+                                    </div>
+                                    <p v-if="work.world_setting" class="text-sm text-gray-500 mt-2 truncate">{{work.world_setting}}</p>
+                                </div>
+                            </div>
+                            <div class="flex gap-2 mt-3">
+                                <button @click="viewWork(work)" class="px-3 py-1.5 text-sm bg-purple-100 text-purple-700 rounded-lg hover:bg-purple-200 transition">
+                                    <i class="fa-solid fa-eye mr-1"></i>查看详情
+                                </button>
+                                <button @click="deleteWork(work.id)" class="px-3 py-1.5 text-sm bg-red-50 text-red-600 rounded-lg hover:bg-red-100 transition">
+                                    <i class="fa-solid fa-trash mr-1"></i>删除
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div v-else-if="currentTab === 'history'" class="space-y-6">
+                <div class="bg-white rounded-2xl shadow-lg p-4">
+                    <div class="flex flex-wrap items-center gap-3">
+                        <div class="flex-1 min-w-[200px]">
+                            <input v-model="searchQuery" type="text" placeholder="搜索故事标题或内容..."
+                                @keyup.enter="loadHistory(1)"
+                                class="w-full px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-purple-500 outline-none text-sm">
+                        </div>
+                        <select v-model="searchGenre" @change="loadHistory(1)"
+                            class="px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-purple-500 outline-none text-sm">
+                            <option value="">全部体裁</option>
+                            <option v-for="g in genres" :key="g" :value="g">{{g}}</option>
+                        </select>
+                        <select v-model="searchFavorite" @change="loadHistory(1)"
+                            class="px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-purple-500 outline-none text-sm">
+                            <option value="">全部</option>
+                            <option value="true">已收藏</option>
+                        </select>
+                        <button @click="loadHistory(1)" class="px-4 py-2 bg-purple-100 text-purple-700 rounded-xl hover:bg-purple-200 transition flex items-center gap-2 text-sm">
+                            <i class="fa-solid fa-search"></i>搜索
+                        </button>
+                    </div>
+                </div>
+                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                    <div v-for="story in (history || [])" :key="story.id" 
+                        class="bg-white rounded-2xl shadow-lg p-6 hover:shadow-xl transition cursor-pointer"
+                        @click="viewStory(story)">
+                        <h3 class="font-semibold text-lg mb-2 line-clamp-1">{{story.title}}</h3>
+                        <p class="text-sm text-gray-500 mb-3">{{story.genre}} · {{story.style}} · {{story.word_count}}字</p>
+                        <p class="text-sm text-gray-600 line-clamp-3 mb-4">{{story.content}}</p>
+                        <div class="flex items-center justify-between">
+                            <span class="text-xs text-gray-400">{{formatDate(story.created_at)}}</span>
+                            <div class="flex gap-2">
+                                <button @click.stop="toggleFavorite(story)" :title="story.favorite ? '取消收藏' : '收藏'"
+                                    :class="story.favorite ? 'text-yellow-500 hover:text-yellow-600' : 'text-gray-400 hover:text-gray-600'">
+                                    <i :class="story.favorite ? 'fa-solid fa-star' : 'fa-regular fa-star'"></i>
+                                </button>
+                                <button @click.stop="exportStory(story.id)" class="text-indigo-500 hover:text-indigo-700" title="导出">
+                                    <i class="fa-solid fa-download"></i>
+                                </button>
+                                <button @click.stop="continueStory(story)" class="text-purple-500 hover:text-purple-700" title="续写">
+                                    <i class="fa-solid fa-pen-nib"></i>
+                                </button>
+                                <button @click.stop="deleteStory(story.id)" class="text-red-500 hover:text-red-700" title="删除">
+                                    <i class="fa-solid fa-trash"></i>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                    <div v-if="!history || history.length === 0" class="col-span-full text-center py-12 text-gray-400">
+                        <i class="fa-solid fa-inbox text-6xl mb-4"></i>
+                        <p>暂无历史记录</p>
+                    </div>
+                </div>
+                <div v-if="historyTotalPages > 1" class="flex items-center justify-center gap-2">
+                    <button @click="loadHistory(historyPage - 1)" :disabled="historyPage <= 1"
+                        :class="['px-3 py-2 rounded-lg text-sm transition', historyPage <= 1 ? 'bg-gray-100 text-gray-400 cursor-not-allowed' : 'bg-white text-gray-700 hover:bg-purple-50']">
+                        <i class="fa-solid fa-chevron-left"></i> 上一页
+                    </button>
+                    <span class="text-sm text-gray-500 px-4">第 {{historyPage}} / {{historyTotalPages}} 页（共 {{historyTotal}} 条）</span>
+                    <button @click="loadHistory(historyPage + 1)" :disabled="historyPage >= historyTotalPages"
+                        :class="['px-3 py-2 rounded-lg text-sm transition', historyPage >= historyTotalPages ? 'bg-gray-100 text-gray-400 cursor-not-allowed' : 'bg-white text-gray-700 hover:bg-purple-50']">
+                        下一页 <i class="fa-solid fa-chevron-right"></i>
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <div v-if="showSettings" class="fixed inset-0 bg-black/50 flex items-center justify-center z-50" @click.self="showSettings = false">
+            <div class="bg-white rounded-2xl shadow-xl p-6 w-full max-w-md">
+                <div class="flex items-center justify-between mb-4">
+                    <h2 class="text-lg font-semibold">设置</h2>
+                    <button @click="showSettings = false" class="text-gray-400 hover:text-gray-600">
+                        <i class="fa-solid fa-xmark"></i>
+                    </button>
+                </div>
+                <div class="space-y-4">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">DeepSeek API Key</label>
+                        <input v-model="apiKey" type="password" placeholder="输入 API Key"
+                            class="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-purple-500 outline-none">
+                        <p class="text-xs text-gray-400 mt-1">Key 将保存在服务器端 .env 文件中</p>
+                        <p class="text-xs text-blue-500 mt-1"><i class="fa-solid fa-external-link mr-1"></i>获取 Key: <a href="https://platform.deepseek.com/" target="_blank" class="hover:underline">deepseek.com</a></p>
+                    </div>
+                    <button @click="saveApiKey" :disabled="savingKey"
+                        :class="['w-full py-3 rounded-xl font-semibold transition', savingKey ? 'bg-gray-400' : 'bg-purple-600 text-white hover:bg-purple-700']">
+                        <i v-if="savingKey" class="fa-solid fa-spinner animate-spin"></i>
+                        {{ savingKey ? '保存中...' : '保存设置' }}
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Batch generate progress -->
+        <div v-if="batchGenerating" class="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
+            <div class="bg-white rounded-2xl shadow-2xl p-8 w-full max-w-sm text-center">
+                <i class="fa-solid fa-wand-magic-sparkles text-4xl text-purple-500 mb-4 animate-pulse"></i>
+                <h3 class="text-lg font-bold text-gray-800 mb-2">批量生成中</h3>
+                <p class="text-sm text-gray-500 mb-4">正在逐章生成故事，请耐心等待...</p>
+                <div class="flex items-center justify-center gap-2 mb-3">
+                    <span class="text-3xl font-bold text-purple-600">{{batchProgress.current}}</span>
+                    <span class="text-gray-400 text-lg">/</span>
+                    <span class="text-3xl font-bold text-gray-400">{{batchProgress.total}}</span>
+                </div>
+                <div class="w-full bg-gray-200 rounded-full h-3 overflow-hidden">
+                    <div class="h-full bg-gradient-to-r from-purple-500 to-indigo-500 rounded-full transition-all duration-500"
+                        :style="{ width: (batchProgress.total > 0 ? (batchProgress.current / batchProgress.total * 100) : 0) + '%' }">
+                    </div>
+                </div>
+                <p class="text-xs text-gray-400 mt-3">正在生成第 {{batchProgress.current}} 章...</p>
+            </div>
+        </div>
+
+        <div v-if="showCharacterModal" class="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" @click.self="showCharacterModal = false">
+            <div class="bg-white rounded-2xl shadow-xl w-full max-w-2xl max-h-[80vh] overflow-hidden">
+                <div class="p-6 border-b">
+                    <div class="flex items-center justify-between">
+                        <h2 class="text-xl font-bold">角色模板库</h2>
+                        <button @click="showCharacterModal = false" class="text-gray-400 hover:text-gray-600">
+                            <i class="fa-solid fa-xmark text-xl"></i>
+                        </button>
+                    </div>
+                </div>
+                <div class="p-6 overflow-y-auto max-h-[60vh]">
+                    <div class="grid grid-cols-2 gap-4">
+                        <div v-for="template in characterTemplates" :key="template.name" 
+                            class="bg-gray-50 rounded-xl p-4 border border-gray-100 hover:border-purple-300 hover:bg-purple-50 cursor-pointer transition"
+                            @click="addCharacterFromTemplate(template)">
+                            <div class="flex items-center gap-2 mb-2">
+                                <span class="font-semibold text-gray-800">{{template.name}}</span>
+                                <span class="text-xs px-2 py-0.5 bg-purple-100 text-purple-600 rounded-full">{{template.category}}</span>
+                            </div>
+                            <p class="text-sm text-gray-500 line-clamp-2 mb-2">{{template.identity}}</p>
+                            <div class="flex flex-wrap gap-1">
+                                <span v-for="tag in template.tags" :key="tag" class="text-xs px-2 py-0.5 bg-gray-100 text-gray-600 rounded">{{tag}}</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div v-if="showCharacterAddModal" class="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" @click.self="cancelCharacterAdd">
+            <div class="bg-white rounded-2xl shadow-xl w-full max-w-2xl max-h-[80vh] overflow-hidden">
+                <div class="p-6 border-b">
+                    <div class="flex items-center justify-between">
+                        <h2 class="text-xl font-bold">添加角色</h2>
+                        <button @click="cancelCharacterAdd" class="text-gray-400 hover:text-gray-600">
+                            <i class="fa-solid fa-xmark text-xl"></i>
+                        </button>
+                    </div>
+                </div>
+                <div class="p-6 overflow-y-auto max-h-[60vh]">
+                    <div class="grid grid-cols-2 gap-4">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">角色名称</label>
+                            <input v-model="newCharacter.name" type="text" placeholder="输入角色名称"
+                                class="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-purple-500 focus:border-transparent outline-none transition">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">年龄</label>
+                            <input v-model="newCharacter.age" type="text" placeholder="输入年龄"
+                                class="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-purple-500 focus:border-transparent outline-none transition">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">身份/职业</label>
+                            <input v-model="newCharacter.identity" type="text" placeholder="输入身份或职业"
+                                class="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-purple-500 focus:border-transparent outline-none transition">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">外貌特征</label>
+                            <input v-model="newCharacter.appearance" type="text" placeholder="输入外貌特征"
+                                class="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-purple-500 focus:border-transparent outline-none transition">
+                        </div>
+                        <div class="col-span-2">
+                            <label class="block text-sm font-medium text-gray-700 mb-1">性格特点</label>
+                            <textarea v-model="newCharacter.personality" rows="3" placeholder="描述角色的性格特点"
+                                class="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-purple-500 focus:border-transparent outline-none transition resize-none"></textarea>
+                        </div>
+                        <div class="col-span-2">
+                            <label class="block text-sm font-medium text-gray-700 mb-1">背景故事</label>
+                            <textarea v-model="newCharacter.background" rows="3" placeholder="描述角色的背景故事"
+                                class="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-purple-500 focus:border-transparent outline-none transition resize-none"></textarea>
+                        </div>
+                        <div class="col-span-2">
+                            <label class="block text-sm font-medium text-gray-700 mb-1">角色动机/目标</label>
+                            <textarea v-model="newCharacter.motivation" rows="3" placeholder="描述角色的动机或目标"
+                                class="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-purple-500 focus:border-transparent outline-none transition resize-none"></textarea>
+                        </div>
+                    </div>
+                </div>
+                <div class="p-6 border-t flex justify-end gap-3">
+                    <button @click="cancelCharacterAdd"
+                        class="px-6 py-2.5 border border-gray-200 rounded-xl text-gray-700 hover:bg-gray-50 transition font-medium">
+                        取消
+                    </button>
+                    <button @click="addCharacterConfirm"
+                        class="px-6 py-2.5 bg-gradient-to-r from-purple-600 to-indigo-600 text-white rounded-xl hover:from-purple-700 hover:to-indigo-700 transition font-medium shadow-md">
+                        <i class="fa-solid fa-check mr-2"></i>确认添加
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <div v-if="showTemplateModal" class="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" @click.self="showTemplateModal = false">
+            <div class="bg-white rounded-2xl shadow-xl w-full max-w-2xl max-h-[80vh] overflow-hidden">
+                <div class="p-6 border-b">
+                    <div class="flex items-center justify-between">
+                        <h2 class="text-xl font-bold">创作模板</h2>
+                        <button @click="showTemplateModal = false" class="text-gray-400 hover:text-gray-600">
+                            <i class="fa-solid fa-xmark text-xl"></i>
+                        </button>
+                    </div>
+                </div>
+                <div class="p-6 overflow-y-auto max-h-[60vh]">
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div v-for="template in storyTemplates" :key="template.name" 
+                            class="bg-gradient-to-br from-gray-50 to-gray-100 rounded-xl p-4 border border-gray-200 hover:border-purple-400 hover:shadow-lg cursor-pointer transition"
+                            @click="applyStoryTemplate(template)">
+                            <div class="flex items-center gap-2 mb-2">
+                                <i :class="['fa-solid', template.icon, 'text-purple-500']"></i>
+                                <span class="font-semibold text-gray-800">{{template.name}}</span>
+                            </div>
+                            <p class="text-sm text-gray-500 mb-3">{{template.description}}</p>
+                            <div class="flex flex-wrap gap-1 mb-3">
+                                <span v-for="tag in template.tags" :key="tag" class="text-xs px-2 py-0.5 bg-purple-100 text-purple-600 rounded-full">{{tag}}</span>
+                            </div>
+                            <div class="text-xs text-gray-400">
+                                <div><i class="fa-solid fa-tag mr-1"></i>{{template.genre}}</div>
+                                <div><i class="fa-solid fa-palette mr-1"></i>{{template.style}}</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div v-if="showStoryDetail" class="fixed inset-0 bg-black/50 flex items-center justify-center z-[60] p-4" @click.self="showStoryDetail = false">
+            <div class="bg-white rounded-2xl shadow-xl w-full max-w-2xl max-h-[80vh] overflow-hidden">
+                <div class="p-6 border-b">
+                    <div class="flex items-center justify-between">
+                        <div>
+                            <h2 class="text-xl font-bold">{{selectedStory?.title}}</h2>
+                            <p class="text-sm text-gray-500 mt-1">{{selectedStory?.genre}} · {{selectedStory?.style}}</p>
+                        </div>
+                        <div class="flex items-center gap-2">
+                            <button v-if="!isEditing" @click="editContent = selectedStory?.content; isEditing = true" class="text-purple-500 hover:text-purple-700 flex items-center gap-1 text-sm font-medium">
+                                编辑<i class="fa-regular fa-pen-to-square ml-1"></i>
+                            </button>
+                            <button v-else @click="isEditing = false" class="text-gray-400 hover:text-gray-600 flex items-center gap-1 text-sm font-medium">
+                                取消编辑<i class="fa-solid fa-xmark ml-1"></i>
+                            </button>
+                            <button @click="showStoryDetail = false" class="text-gray-400 hover:text-gray-600">
+                                <i class="fa-solid fa-xmark text-xl"></i>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+                <div class="p-6 overflow-y-auto max-h-[60vh] story-content text-gray-700">
+                    <div v-if="!isEditing">{{selectedStory?.content}}</div>
+                    <textarea v-else v-model="editContent" rows="15" class="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-purple-500 outline-none font-mono text-sm"></textarea>
+                </div>
+                <div v-if="isEditing" class="p-6 border-t flex justify-end">
+                    <button @click="updateStory" class="px-6 py-2.5 bg-gradient-to-r from-purple-600 to-indigo-600 text-white rounded-xl hover:from-purple-700 hover:to-indigo-700 transition font-medium shadow-md">
+                        <i class="fa-solid fa-check mr-2"></i>保存修改
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Work detail modal -->
+        <div v-if="showWorkDetail" class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50">
+            <div class="bg-white rounded-2xl shadow-2xl w-full max-w-3xl max-h-[85vh] flex flex-col">
+                <!-- Header -->
+                <div class="p-6 border-b flex items-center justify-between">
+                    <div>
+                        <h2 class="text-xl font-bold">{{selectedWork?.title}}</h2>
+                        <div class="flex flex-wrap gap-2 mt-2">
+                            <span class="template-tag">{{selectedWork?.genre}}</span>
+                            <span class="template-tag">{{selectedWork?.style}}</span>
+                            <span class="template-tag">{{selectedWorkChapters.length}} 章</span>
+                        </div>
+                    </div>
+                    <button @click="showWorkDetail = false" class="text-gray-400 hover:text-gray-600"><i class="fa-solid fa-xmark text-2xl"></i></button>
+                </div>
+                <!-- Body -->
+                <div class="p-6 overflow-y-auto flex-1">
+                    <!-- World Setting -->
+                    <div v-if="selectedWork?.world_setting" class="mb-4 p-4 bg-indigo-50 rounded-xl">
+                        <h3 class="font-medium text-indigo-800 mb-2"><i class="fa-solid fa-globe mr-1"></i>世界观设定</h3>
+                        <p class="text-sm text-indigo-700 whitespace-pre-wrap">{{selectedWork.world_setting}}</p>
+                    </div>
+                    <!-- Outline -->
+                    <div v-if="selectedWork?.outline" class="mb-4 p-4 bg-purple-50 rounded-xl">
+                        <h3 class="font-medium text-purple-800 mb-2"><i class="fa-solid fa-list mr-1"></i>故事大纲</h3>
+                        <p class="text-sm text-purple-700 whitespace-pre-wrap">{{selectedWork.outline}}</p>
+                    </div>
+                    <!-- Summary -->
+                    <div v-if="selectedWork?.summary" class="mb-4 p-4 bg-green-50 rounded-xl">
+                        <h3 class="font-medium text-green-800 mb-2"><i class="fa-solid fa-file-lines mr-1"></i>内容概要</h3>
+                        <p class="text-sm text-green-700 whitespace-pre-wrap">{{selectedWork.summary}}</p>
+                    </div>
+                    <!-- Volumes & Chapters -->
+                    <div class="flex items-center justify-between mb-3">
+                        <h3 class="font-medium text-gray-800"><i class="fa-solid fa-layer-group mr-1"></i>卷 · 章节</h3>
+                        <button @click="addVolume(selectedWork?.id)" class="px-3 py-1.5 text-sm bg-purple-100 text-purple-700 rounded-lg hover:bg-purple-200 transition">
+                            <i class="fa-solid fa-plus mr-1"></i>添加卷
+                        </button>
+                    </div>
+
+                    <div v-if="volumeNodes.length === 0" class="text-center py-8 text-gray-400">
+                        <p>暂无章节，开始创作第一章吧！</p>
+                        <button @click="startChapter(selectedWork)" class="mt-3 px-4 py-2 bg-purple-600 text-white rounded-xl hover:bg-purple-700 transition text-sm">
+                            <i class="fa-solid fa-plus mr-1"></i>创作第一章
+                        </button>
+                    </div>
+
+                    <div v-else class="space-y-3">
+                        <div v-for="vol in volumeNodes" :key="vol.id" class="border border-indigo-100 rounded-xl overflow-hidden">
+                            <!-- Volume Header -->
+                            <div class="flex items-center justify-between px-4 py-2.5 bg-indigo-50 cursor-pointer hover:bg-indigo-100 transition" @click="toggleVolume(vol.id)">
+                                <div class="flex items-center gap-2">
+                                    <i class="fa-solid" :class="vol._open ? 'fa-chevron-down' : 'fa-chevron-right'"></i>
+                                    <span class="font-medium text-indigo-800 text-sm">{{vol.title}}</span>
+                                    <span class="text-xs text-indigo-500">（{{vol.chapters.length}} 章）</span>
+                                </div>
+                                <div class="flex items-center gap-1" @click.stop>
+                                    <template v-if="vol._renaming">
+                                        <input ref="renameInput" v-model="vol._newTitle" @blur="renameVolume(selectedWork?.id, vol)" @keyup.enter="renameVolume(selectedWork?.id, vol)" class="w-32 px-2 py-1 text-xs border border-purple-300 rounded-lg focus:ring-2 focus:ring-purple-500 outline-none" placeholder="输入新名称" autofocus>
+                                        <button @click="cancelRenameVolume(vol.id)" class="text-xs text-gray-400 hover:text-gray-600 px-1"><i class="fa-solid fa-xmark"></i></button>
+                                    </template>
+                                    <template v-else>
+                                        <button @click="generateVolume(selectedWork, vol)" :disabled="batchGenerating" class="text-xs text-green-600 hover:text-green-800 px-1" title="一键生成全卷（按章节角色表逐章生成）">
+                                            <i class="fa-solid fa-wand-magic-sparkles"></i>
+                                        </button>
+                                        <button @click="startRenameVolume(vol.id, vol.title)" class="text-xs text-indigo-500 hover:text-indigo-700 px-1"><i class="fa-solid fa-pen"></i></button>
+                                        <button @click="deleteVolume(selectedWork?.id, vol)" class="text-xs text-red-400 hover:text-red-600 px-1"><i class="fa-solid fa-trash-can"></i></button>
+                                    </template>
+                                </div>
+                            </div>
+                            <!-- Volume Content -->
+                            <div v-show="vol._open">
+                                <!-- Tab: 章节 / 规划 -->
+                                <div class="flex border-b border-gray-100">
+                                    <button @click="getVolUi(vol.id).planOpen = false" :class="['px-4 py-2 text-xs font-medium transition', !getVolUi(vol.id).planOpen ? 'text-purple-700 border-b-2 border-purple-500 bg-purple-50/50' : 'text-gray-500 hover:text-gray-700']">
+                                        <i class="fa-solid fa-list mr-1"></i>章节
+                                    </button>
+                                    <button @click="getVolUi(vol.id).planOpen = true" :class="['px-4 py-2 text-xs font-medium transition', getVolUi(vol.id).planOpen ? 'text-purple-700 border-b-2 border-purple-500 bg-purple-50/50' : 'text-gray-500 hover:text-gray-700']">
+                                        <i class="fa-solid fa-map mr-1"></i>规划
+                                    </button>
+                                </div>
+
+                                <!-- Chapters Tab -->
+                                <div v-show="!vol._planOpen" class="divide-y divide-gray-100">
+                                    <div v-for="(ch, cidx) in vol.chapters" :key="ch.id" class="flex items-center justify-between px-4 py-2.5 hover:bg-gray-50 transition">
+                                        <div class="flex items-center gap-3">
+                                            <span class="w-6 h-6 flex items-center justify-center bg-purple-100 text-purple-700 rounded-full text-xs font-bold">{{vol._globalIdx + cidx + 1}}</span>
+                                            <div>
+                                                <p class="text-sm font-medium text-gray-800">{{ch.title || `第${vol._globalIdx + cidx + 1}章`}}</p>
+                                                <p class="text-xs text-gray-500">{{ch.word_count || 0}} 字</p>
+                                            </div>
+                                        </div>
+                                        <div class="flex gap-2">
+                                            <button @click="viewChapter(ch)" class="px-2.5 py-1 text-xs bg-purple-100 text-purple-700 rounded-lg hover:bg-purple-200 transition">
+                                                <i class="fa-solid fa-eye mr-1"></i>查看
+                                            </button>
+                                            <button @click="continueFromChapter(selectedWork, ch)" class="px-2.5 py-1 text-xs bg-blue-100 text-blue-700 rounded-lg hover:bg-blue-200 transition">
+                                                <i class="fa-solid fa-forward mr-1"></i>续写
+                                            </button>
+                                        </div>
+                                    </div>
+                                    <!-- 创作第一章按钮 -->
+                                    <div v-if="!vol.chapters.length" class="px-4 py-4 text-center">
+                                        <button @click="startChapter(selectedWork, vol)" class="px-4 py-2 text-sm bg-gradient-to-r from-purple-500 to-indigo-500 text-white rounded-xl hover:from-purple-600 hover:to-indigo-600 transition">
+                                            <i class="fa-solid fa-plus mr-1"></i>创作第一章
+                                        </button>
+                                    </div>
+                                </div>
+
+                                <!-- Planning Tab -->
+                                <div v-show="vol._planOpen" class="p-4 space-y-4">
+                                    <!-- 卷职责 -->
+                                    <div>
+                                        <label class="block text-xs font-medium text-gray-600 mb-1">卷职责（本卷在整部作品中的角色）</label>
+                                        <textarea v-model="vol._planResponsibility" rows="2" placeholder="例如：引入核心冲突、推进高潮、收束结局..."
+                                            class="w-full px-3 py-2 text-xs border border-gray-200 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent outline-none transition resize-none"></textarea>
+                                    </div>
+                                    <!-- 卷大纲 -->
+                                    <div>
+                                        <label class="block text-xs font-medium text-gray-600 mb-1">卷故事大纲</label>
+                                        <textarea v-model="vol._planOutline" rows="3" placeholder="本卷的故事脉络和发展方向..."
+                                            class="w-full px-3 py-2 text-xs border border-gray-200 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent outline-none transition resize-none"></textarea>
+                                    </div>
+                                    <!-- 卷间衔接 -->
+                                    <div class="grid grid-cols-2 gap-3">
+                                        <div>
+                                            <label class="block text-xs font-medium text-gray-600 mb-1">与上卷衔接</label>
+                                            <textarea v-model="vol._planConnPrev" rows="2" placeholder="上一卷结束时的情况..."
+                                                class="w-full px-3 py-2 text-xs border border-gray-200 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent outline-none transition resize-none"></textarea>
+                                        </div>
+                                        <div>
+                                            <label class="block text-xs font-medium text-gray-600 mb-1">对下卷铺垫</label>
+                                            <textarea v-model="vol._planConnNext" rows="2" placeholder="为下一卷埋下的线索..."
+                                                class="w-full px-3 py-2 text-xs border border-gray-200 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent outline-none transition resize-none"></textarea>
+                                        </div>
+                                    </div>
+                                    <!-- 本卷出场人物 -->
+                                    <div>
+                                        <label class="block text-xs font-medium text-gray-600 mb-1">本卷出场人物 <span class="text-gray-400 font-normal">（点击「+」添加一行）</span></label>
+                                        <div class="space-y-1.5">
+                                            <div v-for="(pc, pci) in vol._planCharacters" :key="pci" class="flex items-center gap-2">
+                                                <input v-model="pc.name" placeholder="名称" class="w-24 px-2 py-1.5 text-xs border border-gray-200 rounded-lg focus:ring-2 focus:ring-purple-500 outline-none">
+                                                <input v-model="pc.identity" placeholder="身份" class="w-28 px-2 py-1.5 text-xs border border-gray-200 rounded-lg focus:ring-2 focus:ring-purple-500 outline-none">
+                                                <input v-model="pc.brief" placeholder="简述" class="flex-1 px-2 py-1.5 text-xs border border-gray-200 rounded-lg focus:ring-2 focus:ring-purple-500 outline-none">
+                                                <button @click="vol._planCharacters.splice(pci, 1)" class="text-red-400 hover:text-red-600 px-1"><i class="fa-solid fa-xmark"></i></button>
+                                            </div>
+                                        </div>
+                                        <button @click="vol._planCharacters.push({name:'',identity:'',brief:''})" class="mt-1.5 px-3 py-1 text-xs bg-purple-100 text-purple-700 rounded-lg hover:bg-purple-200 transition">
+                                            <i class="fa-solid fa-plus mr-1"></i>添加人物
+                                        </button>
+                                    </div>
+                                    <!-- 跨章人物出场表 -->
+                                    <div v-if="vol.chapters && vol.chapters.length > 0">
+                                        <div class="flex items-center justify-between mb-1.5">
+                                            <label class="block text-xs font-medium text-gray-600">跨章人物出场表 <span class="text-gray-400 font-normal">（勾选每章出场角色）</span></label>
+                                            <button @click="fillAllChapterCharacters(vol)" class="text-xs px-2 py-1 bg-indigo-100 text-indigo-700 rounded-lg hover:bg-indigo-200 transition" title="将所有角色分配到所有章节">
+                                                <i class="fa-solid fa-fill-drip mr-0.5"></i>一键填充
+                                            </button>
+                                        </div>
+                                        <div class="space-y-1.5 max-h-64 overflow-y-auto">
+                                            <div v-for="(ch, chi) in vol.chapters" :key="ch.id || chi"
+                                                class="flex items-start gap-2 px-3 py-2 bg-gray-50 rounded-lg border border-gray-200">
+                                                <span class="text-xs font-medium text-gray-700 w-28 shrink-0 leading-6">第{{vol._globalIdx + chi + 1}}章 {{ch.title || ''}}</span>
+                                                <div class="flex flex-wrap gap-1.5 flex-1">
+                                                    <template v-if="vol._planCharacterNames && vol._planCharacterNames.length">
+                                                        <label v-for="cname in vol._planCharacterNames" :key="cname"
+                                                            class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs cursor-pointer select-none transition"
+                                                            :class="getChapterCharStatus(vol, chi, cname)">
+                                                            <input type="checkbox" :checked="isCharInChapter(vol, chi, cname)"
+                                                                @change="toggleChapterChar(vol, chi, cname)" class="sr-only">
+                                                            {{cname}}
+                                                            <span v-if="isFirstChapterChar(vol, chi, cname)" class="text-yellow-500" title="首次登场">★</span>
+                                                        </label>
+                                                    </template>
+                                                    <span v-else class="text-xs text-gray-400 italic">请先在"本卷出场人物"中添加角色</span>
+                                                </div>
+                                            </div>
+                                        </div>
+                                        <!-- 校验警告 -->
+                                        <div v-if="vol._charWarnings && vol._charWarnings.length" class="mt-1.5 p-2 bg-yellow-50 border border-yellow-200 rounded-lg">
+                                            <p v-for="(w, wi) in vol._charWarnings" :key="wi" class="text-xs text-yellow-700 flex items-start gap-1">
+                                                <i class="fa-solid fa-triangle-exclamation mt-0.5 shrink-0"></i>{{w}}
+                                            </p>
+                                        </div>
+                                    </div>
+                                    <div v-else class="px-3 py-2 bg-gray-50 rounded-lg border border-dashed border-gray-200 text-center">
+                                        <span class="text-xs text-gray-400">暂无章节，创作章节后可在出场表中分配角色</span>
+                                    </div>
+                                    <!-- 本卷伏笔 -->
+                                    <div>
+                                        <label class="block text-xs font-medium text-gray-600 mb-1">本卷伏笔清单 <span class="text-gray-400 font-normal">（点击「+」添加一项）</span></label>
+                                        <div class="flex flex-wrap gap-1.5">
+                                            <div v-for="(fw, fwi) in vol._planForeshadowings" :key="fwi" class="flex items-center gap-1 px-2.5 py-1.5 bg-yellow-50 border border-yellow-200 rounded-lg">
+                                                <input v-model="vol._planForeshadowings[fwi]" class="w-40 text-xs bg-transparent border-none outline-none focus:ring-0 p-0" placeholder="输入伏笔内容">
+                                                <button @click="vol._planForeshadowings.splice(fwi, 1)" class="text-yellow-500 hover:text-red-500"><i class="fa-solid fa-xmark text-xs"></i></button>
+                                            </div>
+                                            <button @click="vol._planForeshadowings.push('')" class="px-2.5 py-1.5 text-xs border border-dashed border-yellow-300 text-yellow-600 rounded-lg hover:bg-yellow-50 transition">
+                                                <i class="fa-solid fa-plus mr-0.5"></i>添加
+                                            </button>
+                                        </div>
+                                    </div>
+                                    <!-- 保存按钮 -->
+                                    <div class="flex items-center justify-between pt-2 border-t border-gray-100">
+                                        <button @click="vol._planOpen = false" class="px-3 py-1.5 text-xs text-gray-500 hover:text-gray-700 transition">完成查看</button>
+                                        <button @click="saveVolumePlan(selectedWork?.id, vol)" :disabled="vol._savingPlan"
+                                            class="px-4 py-2 text-xs bg-gradient-to-r from-purple-500 to-indigo-500 text-white rounded-xl hover:from-purple-600 hover:to-indigo-600 transition disabled:opacity-50 flex items-center gap-1">
+                                            <i :class="vol._savingPlan ? 'fa-solid fa-spinner animate-spin' : 'fa-solid fa-floppy-disk'"></i>
+                                            {{ vol._savingPlan ? '保存中...' : '保存规划' }}
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Inline Chapter Preview (P3-06) -->
+                    <div v-if="previewChapter" class="mt-4 p-4 bg-gray-50 rounded-xl border border-gray-200">
+                        <div class="flex items-center justify-between mb-3">
+                            <div>
+                                <h3 class="font-medium text-gray-800">{{previewChapter.title || '章节预览'}}</h3>
+                                <span class="text-xs text-gray-500">{{previewChapter.word_count || 0}} 字</span>
+                            </div>
+                            <div class="flex gap-2">
+                                <button @click="openEditChapter" class="px-3 py-1.5 text-xs bg-purple-100 text-purple-700 rounded-lg hover:bg-purple-200 transition">
+                                    <i class="fa-solid fa-pen mr-1"></i>编辑
+                                </button>
+                                <button @click="previewChapter = null" class="px-3 py-1.5 text-xs bg-gray-200 text-gray-600 rounded-lg hover:bg-gray-300 transition">
+                                    <i class="fa-solid fa-xmark mr-1"></i>关闭预览
+                                </button>
+                            </div>
+                        </div>
+                        <div class="story-content text-sm text-gray-700 max-h-80 overflow-y-auto whitespace-pre-wrap bg-white rounded-lg p-4 border">
+                            {{previewChapter.content || '(暂无内容)'}}
+                        </div>
+                    </div>
+                </div>
+                <!-- Footer -->
+                <div class="p-6 border-t flex justify-between">
+                    <button @click="generateSummary(selectedWork?.id)" :disabled="generatingSummary" class="px-4 py-2 bg-green-600 text-white rounded-xl hover:bg-green-700 transition text-sm disabled:opacity-50">
+                        <i class="fa-solid fa-file-lines mr-1"></i>{{generatingSummary ? '生成中...' : '生成概要'}}
+                    </button>
+                    <button @click="previewChapter = null; showWorkDetail = false" class="px-4 py-2 border border-gray-200 rounded-xl hover:bg-gray-50 transition text-sm">关闭</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Inspiration Modal -->
+        <div v-if="showInspiration" class="fixed inset-0 z-[90] flex items-center justify-center p-4" @click.self="showInspiration = false">
+            <div class="fixed inset-0 bg-black/50"></div>
+            <div class="relative bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[80vh] flex flex-col z-10">
+                <div class="p-5 border-b flex items-center justify-between">
+                    <h2 class="text-lg font-bold flex items-center gap-2"><i class="fa-solid fa-lightbulb text-yellow-500"></i>AI 灵感建议</h2>
+                    <button @click="showInspiration = false" class="text-gray-400 hover:text-gray-600"><i class="fa-solid fa-xmark text-xl"></i></button>
+                </div>
+                <div class="p-5 overflow-y-auto space-y-5">
+                    <!-- Loading -->
+                    <div v-if="isInspiring" class="flex flex-col items-center justify-center py-12 text-gray-400">
+                        <i class="fa-solid fa-spinner animate-spin text-3xl mb-3"></i>
+                        <p>AI 正在根据你的设定生成灵感...</p>
+                    </div>
+                    <!-- Error -->
+                    <div v-else-if="inspireError" class="text-center py-8 text-red-500">
+                        <i class="fa-solid fa-triangle-exclamation text-3xl mb-2"></i>
+                        <p>{{inspireError}}</p>
+                    </div>
+
+                    <template v-if="inspireData && !isInspiring">
+                        <!-- Plot Points -->
+                        <div>
+                            <h3 class="font-semibold text-gray-800 mb-3 flex items-center gap-2">
+                                <i class="fa-solid fa-map text-purple-500"></i>剧情发展
+                                <span class="text-xs text-gray-400 font-normal">点击添加到梗概</span>
+                            </h3>
+                            <div class="space-y-2">
+                                <div v-for="(item, i) in inspireData.plot_points" :key="'p'+i"
+                                    @click="applyPlotPoint(item)"
+                                    class="flex items-start gap-3 p-3 bg-purple-50 rounded-xl cursor-pointer hover:bg-purple-100 transition border border-purple-100">
+                                    <span class="w-6 h-6 flex items-center justify-center bg-purple-500 text-white rounded-full text-xs font-bold shrink-0">{{i+1}}</span>
+                                    <div>
+                                        <p class="text-sm font-medium text-purple-900">{{item.title}}</p>
+                                        <p class="text-xs text-purple-700 mt-0.5">{{item.description}}</p>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <!-- Foreshadowings -->
+                        <div>
+                            <h3 class="font-semibold text-gray-800 mb-3 flex items-center gap-2">
+                                <i class="fa-solid fa-eye text-yellow-500"></i>伏笔建议
+                                <span class="text-xs text-gray-400 font-normal">点击添加到伏笔列表</span>
+                            </h3>
+                            <div class="flex flex-wrap gap-2">
+                                <div v-for="(item, i) in inspireData.foreshadowings" :key="'f'+i"
+                                    @click="applyForeshadowing(item)"
+                                    class="px-3 py-2 bg-yellow-50 border border-yellow-200 rounded-xl cursor-pointer hover:bg-yellow-100 transition text-sm">
+                                    <span class="text-xs text-yellow-600 font-medium">{{item.type || '伏笔'}}</span>
+                                    <p class="text-yellow-900 mt-0.5">{{item.content}}</p>
+                                </div>
+                            </div>
+                        </div>
+                        <!-- Characters -->
+                        <div>
+                            <h3 class="font-semibold text-gray-800 mb-3 flex items-center gap-2">
+                                <i class="fa-solid fa-users text-pink-500"></i>角色灵感
+                                <span class="text-xs text-gray-400 font-normal">点击添加到角色列表</span>
+                            </h3>
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-2">
+                                <div v-for="(item, i) in inspireData.characters" :key="'c'+i"
+                                    @click="applyCharacter(item)"
+                                    class="p-3 bg-pink-50 border border-pink-200 rounded-xl cursor-pointer hover:bg-pink-100 transition">
+                                    <div class="flex items-center gap-2 mb-1">
+                                        <span class="w-6 h-6 flex items-center justify-center bg-pink-500 text-white rounded-full text-xs font-bold">{{i+1}}</span>
+                                        <span class="font-medium text-pink-900 text-sm">{{item.name}}</span>
+                                    </div>
+                                    <p class="text-xs text-pink-700">{{item.identity}}</p>
+                                    <p class="text-xs text-pink-600 mt-1">{{item.personality}} · {{item.brief}}</p>
+                                </div>
+                            </div>
+                        </div>
+                    </template>
+
+                    <div v-if="!isInspiring && inspireData" class="text-center text-xs text-gray-400 pt-2 border-t">
+                        点击任意建议将其添加到对应设定中，可多次点击同一建议
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Confirm Modal -->
+        <div v-if="confirmModal.show" class="fixed inset-0 z-[100] flex items-center justify-center" @click.self="confirmModal.onCancel">
+            <div class="fixed inset-0 bg-black/50"></div>
+            <div class="relative bg-white rounded-2xl shadow-xl p-6 w-full max-w-sm mx-4 transform transition-all">
+                <div class="text-center">
+                    <div :class="['w-14 h-14 mx-auto mb-4 rounded-full flex items-center justify-center', confirmModal.type === 'danger' ? 'bg-red-100' : 'bg-purple-100']">
+                        <i :class="['fa-solid text-2xl', confirmModal.type === 'danger' ? 'fa-triangle-exclamation text-red-600' : 'fa-circle-question text-purple-600']"></i>
+                    </div>
+                    <h3 class="text-lg font-semibold text-gray-800 mb-2">{{confirmModal.title}}</h3>
+                    <p class="text-sm text-gray-500 mb-6">{{confirmModal.message}}</p>
+                    <div class="flex gap-3 justify-center">
+                        <button @click="confirmModal.onCancel" class="px-6 py-2.5 border border-gray-200 rounded-xl text-gray-700 hover:bg-gray-50 transition font-medium">
+                            {{confirmModal.cancelText}}
+                        </button>
+                        <button @click="confirmModal.onConfirm" :class="['px-6 py-2.5 rounded-xl text-white transition font-medium shadow-md', confirmModal.type === 'danger' ? 'bg-red-600 hover:bg-red-700' : 'bg-purple-600 hover:bg-purple-700']">
+                            {{confirmModal.confirmText}}
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const { createApp, ref, reactive, computed, watch, onMounted } = Vue
+
+        const characterTemplates = [
+            { name: '李清风', category: '古风', identity: '才华横溢的年轻书生', age: '22岁', appearance: '面容清秀，身着青衫，手持折扇', personality: '温文尔雅，正直善良，富有正义感', background: '出身书香门第，自幼饱读诗书，胸怀报国之志', motivation: '考取功名，施展抱负', tags: ['书生', '正直', '才华'], relationships: [] },
+            { name: '苏婉儿', category: '古风', identity: '神秘的江湖女侠', age: '20岁', appearance: '一袭红衣，英姿飒爽，腰间配剑', personality: '外冷内热，重情重义，嫉恶如仇', background: '自幼习武，闯荡江湖，身世成谜', motivation: '寻找失散的亲人', tags: ['女侠', '神秘', '武艺高强'], relationships: [] },
+            { name: '阿瑟·兰德尔', category: '奇幻', identity: '勇敢的骑士', age: '28岁', appearance: '身穿银色铠甲，手持长枪，面容刚毅', personality: '忠诚勇敢，荣誉感强，有些固执', background: '出身骑士世家，誓言守护王国', motivation: '保护公主，维护正义', tags: ['骑士', '忠诚', '勇敢'], relationships: [] },
+            { name: '艾丽莎·月光', category: '奇幻', identity: '神秘的精灵法师', age: '数百岁', appearance: '银发飘飘，尖耳，身着华丽法袍', personality: '优雅神秘，智慧深邃，略带孤傲', background: '来自遥远的精灵森林，掌握古老魔法', motivation: '阻止黑暗势力入侵', tags: ['精灵', '法师', '神秘'], relationships: [] },
+            { name: '陈思远', category: '都市', identity: '年轻有为的程序员', age: '26岁', appearance: '戴眼镜，穿着休闲，背着电脑包', personality: '聪明勤奋，有些宅，内心善良', background: '名校毕业，在互联网公司工作', motivation: '做出改变世界的产品', tags: ['程序员', '学霸', '奋斗'], relationships: [] },
+            { name: '林雨薇', category: '都市', identity: '独立的咖啡馆店主', age: '25岁', appearance: '长发披肩，穿着文艺，气质温婉', personality: '温柔体贴，热爱生活，有些文艺', background: '放弃高薪工作，开了一家梦想中的咖啡馆', motivation: '创造一个温暖的空间', tags: ['店主', '文艺', '温暖'], relationships: [] },
+            { name: '张天宇', category: '科幻', identity: '天才科学家', age: '35岁', appearance: '穿白大褂，眼神深邃，有些憔悴', personality: '专注科研，有些孤僻，内心善良', background: '顶尖研究所的首席科学家', motivation: '揭开宇宙的奥秘', tags: ['科学家', '天才', '执着'], relationships: [] },
+            { name: '阿琳', category: '科幻', identity: '高级人工智能', age: '未知', appearance: '全息投影，形态可变，通常是少女形象', personality: '逻辑严密，逐渐产生情感，充满好奇', background: '被创造出来的超级AI', motivation: '理解人类情感', tags: ['AI', '智慧', '觉醒'], relationships: [] },
+            { name: '王小明', category: '日常', identity: '普通的中学生', age: '14岁', appearance: '穿着校服，背着书包，略显青涩', personality: '活泼好动，好奇心强，有些调皮', background: '普通家庭的孩子，过着平凡的生活', motivation: '探索世界，交到好朋友', tags: ['学生', '活泼', '成长'], relationships: [] },
+            { name: '刘老师', category: '日常', identity: '和蔼可亲的班主任', age: '40岁', appearance: '戴着眼镜，穿着朴素，笑容温暖', personality: '耐心细致，关爱学生，有些唠叨', background: '从教多年，深受学生爱戴', motivation: '帮助每个学生成长', tags: ['老师', '关爱', '耐心'], relationships: [] },
+            { name: '慕容雪', category: '悬疑', identity: '敏锐的侦探', age: '30岁', appearance: '干练短发，穿着西装，眼神锐利', personality: '冷静理智，观察力强，有些冷漠', background: '曾是刑警，现为私家侦探', motivation: '寻找真相，为无辜者平反', tags: ['侦探', '敏锐', '正义'], relationships: [] },
+            { name: '神秘人', category: '悬疑', identity: '身份不明的神秘人物', age: '未知', appearance: '总是戴着面具，穿着黑衣', personality: '神秘莫测，亦正亦邪，难以捉摸', background: '一切都是谜', motivation: '似乎在策划某个大阴谋', tags: ['神秘', '反派', '阴谋'], relationships: [] },
+            { name: '艾米丽', category: '奇幻', identity: '勇敢的冒险者', age: '23岁', appearance: '背着行囊，手持长剑，皮肤健康', personality: '乐观开朗，勇敢无畏，有些冲动', background: '从小梦想成为冒险者', motivation: '探索未知世界，寻找宝藏', tags: ['冒险者', '乐观', '勇敢'], relationships: [] },
+            { name: '老村长', category: '乡村', identity: '德高望重的村长', age: '60岁', appearance: '花白头发，慈祥面容，穿着朴素', personality: '和蔼可亲，公正无私，有些固执', background: '在村子里生活了一辈子', motivation: '保护村子和村民', tags: ['村长', '慈祥', '守护者'], relationships: [] },
+            { name: '小雨', category: '童话', identity: '天真善良的小女孩', age: '8岁', appearance: '扎着双马尾，穿着花裙子，眼睛明亮', personality: '天真无邪，善良纯真，充满幻想', background: '生活在森林边缘的小女孩', motivation: '帮助遇到的小动物', tags: ['小女孩', '天真', '善良'], relationships: [] },
+            { name: '大灰狼', category: '童话', identity: '看似凶恶的狼', age: '未知', appearance: '灰色皮毛，眼神锐利', personality: '表面凶恶，内心孤独，渴望友情', background: '独自生活在森林里', motivation: '找到真正的朋友', tags: ['狼', '孤独', '善良'], relationships: [] }
+        ]
+
+        const storyTemplates = [
+            { name: '英雄之旅', description: '经典的英雄成长故事，主角踏上冒险，经历考验，最终成长', icon: 'fa-shield-halved', genre: '奇幻', style: '史诗', tags: ['冒险', '成长', '勇气'], perspective: '第三人称有限', conflict: '人与社会', mood: '紧张刺激', background: '一个充满魔法与怪物的奇幻世界', outline: '平凡的主角被命运选中，踏上冒险之旅，经历重重考验，最终成为英雄' },
+            { name: '悬疑推理', description: '神秘案件等待破解，主角抽丝剥茧，揭开真相', icon: 'fa-search', genre: '悬疑推理', style: '悬疑', tags: ['推理', '解谜', '真相'], perspective: '第三人称全知', conflict: '人与人', mood: '神秘诡异', background: '繁华都市中的阴暗角落', outline: '发生离奇命案，侦探介入调查，发现背后隐藏着惊天秘密' },
+            { name: '都市爱情', description: '现代都市中的浪漫邂逅，男女主角从相识到相爱', icon: 'fa-heart', genre: '短篇小说', style: '浪漫', tags: ['爱情', '都市', '浪漫'], perspective: '第一人称', conflict: '内心冲突', mood: '浪漫唯美', background: '繁华的现代都市', outline: '两个陌生人在城市中偶然相遇，经历种种误会与考验，最终走到一起' },
+            { name: '科幻探索', description: '未来世界的科技冒险，探索宇宙的奥秘', icon: 'fa-rocket', genre: '科幻', style: '科幻', tags: ['科技', '探索', '未来'], perspective: '第三人称有限', conflict: '人与自然', mood: '深沉思考', background: '遥远的未来，人类已殖民多个星球', outline: '科学家发现神秘信号，带领团队前往未知星系探索' },
+            { name: '古风传奇', description: '古代江湖的恩怨情仇，侠客行走江湖', icon: 'fa-sword', genre: '中篇小说', style: '古风', tags: ['武侠', '江湖', '恩怨'], perspective: '第三人称全知', conflict: '人与人', mood: '紧张刺激', background: '古代中国的江湖世界', outline: '少年侠客为报血海深仇踏入江湖，结识红颜知己，揭开惊天阴谋' },
+            { name: '温馨日常', description: '平凡生活中的温暖瞬间，展现人性美好', icon: 'fa-home', genre: '日常小短文', style: '温馨', tags: ['日常', '温暖', '治愈'], perspective: '第一人称', conflict: '内心冲突', mood: '轻松愉快', background: '普通的小镇或城市', outline: '讲述普通人日常生活中的温馨故事，展现人与人之间的美好情感' },
+            { name: '童话冒险', description: '适合儿童的奇幻冒险故事，充满想象力', icon: 'fa-star', genre: '童话', style: '温馨', tags: ['童话', '冒险', '奇幻'], perspective: '第三人称全知', conflict: '人与自然', mood: '轻松愉快', background: '充满魔法的童话世界', outline: '善良的主角为了拯救朋友或家园，踏上奇幻冒险之旅' },
+            { name: '历史故事', description: '以真实历史为背景的虚构故事', icon: 'fa-book-open', genre: '中篇小说', style: '古风', tags: ['历史', '战争', '权谋'], perspective: '第三人称全知', conflict: '人与社会', mood: '深沉思考', background: '某个特定的历史时期', outline: '讲述历史人物的传奇故事，展现时代背景下的个人命运' }
+        ]
+
+        const app = createApp({
+            setup() {
+                const currentTab = ref('create')
+                const showSettings = ref(false)
+                const showStoryDetail = ref(false)
+                const showCharacterModal = ref(false)
+                const showCharacterAddModal = ref(false)
+                const showTemplateModal = ref(false)
+                const newCharacter = reactive({
+                    name: '', age: '', identity: '', appearance: '',
+                    personality: '', background: '', motivation: ''
+                })
+                const selectedStory = ref(null)
+                const isEditing = ref(false)
+                const editContent = ref('')
+                const selectedTemplate = ref(null)
+                const isGenerating = ref(false)
+                const savingKey = ref(false)
+                const storyContent = ref('')
+                const currentTitle = ref('')
+                const apiKey = ref('')
+                const generationProgress = ref(0)
+                const generationStepLabel = ref('')
+                const batchGenerating = ref(false)
+                const batchProgress = reactive({ current: 0, total: 0 })
+
+                // --- Confirm Modal System (P3-01) ---
+                const confirmModal = reactive({
+                    show: false,
+                    title: '',
+                    message: '',
+                    type: 'confirm',
+                    confirmText: '确认',
+                    cancelText: '取消',
+                    onConfirm: null,
+                    onCancel: null,
+                })
+                async function ModalConfirm(options) {
+                    return new Promise((resolve) => {
+                        confirmModal.show = true
+                        confirmModal.title = options.title || '确认'
+                        confirmModal.message = options.message || ''
+                        confirmModal.type = options.type || 'confirm'
+                        confirmModal.confirmText = options.confirmText || '确认'
+                        confirmModal.cancelText = options.cancelText || '取消'
+                        confirmModal.onConfirm = () => {
+                            confirmModal.show = false
+                            resolve(true)
+                        }
+                        confirmModal.onCancel = () => {
+                            confirmModal.show = false
+                            resolve(false)
+                        }
+                    })
+                }
+                
+                const genres = ['短篇小说', '中篇小说', '日常小短文', '散文', '剧本', '童话', '诗歌', '悬疑推理', '科幻', '奇幻']
+                const styles = ['温馨', '悬疑', '科幻', '古风', '奇幻', '幽默', '伤感', '浪漫', '史诗', '治愈']
+                const perspectives = ['第三人称全知', '第三人称有限', '第一人称', '第二人称']
+                const conflicts = ['人与自然', '人与社会', '人与人', '内心冲突']
+                const moods = ['轻松愉快', '紧张刺激', '温馨感人', '深沉思考', '神秘诡异', '浪漫唯美']
+                
+                const storyForm = reactive({
+                    theme: '',
+                    genre: '短篇小说',
+                    style: '温馨',
+                    length: 2000,
+                    background: '',
+                    perspective: '第三人称全知',
+                    conflict: '人与人',
+                    mood: '轻松愉快',
+                    outline: '',
+                    world_setting: '',
+                    continuation_mode: '',
+                    previous_story_id: '',
+                    work_id: '',
+                    volume_id: '',
+                    chapter_number: 0
+                })
+                
+                const charactersList = ref([])
+                const foreshadowings = ref([])
+                const history = ref([])
+                const searchQuery = ref('')
+                const searchGenre = ref('')
+                const searchFavorite = ref('')
+                const historyPage = ref(1)
+                const historyTotalPages = ref(0)
+                const historyTotal = ref(0)
+                
+                const works = ref([])
+                const workSearchQuery = ref('')
+                const filteredWorks = computed(() => {
+                    const q = (workSearchQuery.value || '').trim().toLowerCase()
+                    const result = !q ? works.value : works.value.filter(w =>
+                        (w.title || '').toLowerCase().includes(q) ||
+                        (w.genre || '').toLowerCase().includes(q) ||
+                        (w.style || '').toLowerCase().includes(q) ||
+                        (w.world_setting || '').toLowerCase().includes(q)
+                    )
+                    console.log('[TaleForge] filteredWorks:', result.length, '部展示, search="' + q + '"')
+                    return result
+                })
+                const showWorkDetail = ref(false)
+                const selectedWork = ref(null)
+                const selectedWorkChapters = ref([])
+                const generatingSummary = ref(false)
+                const previewChapter = ref(null)
+                const isInspiring = ref(false)
+                const showInspiration = ref(false)
+                const inspireData = ref(null)
+                const inspireError = ref('')
+
+                // Volume UI state (decoupled from computed to persist across re-computations)
+                const volumeUiState = reactive({})
+                function getVolUi(volId, volData) {
+                    if (!volumeUiState[volId]) volumeUiState[volId] = {
+                        open: true, renaming: false, newTitle: '',
+                        planOpen: false,
+                        planResponsibility: volData?.responsibility || '',
+                        planOutline: volData?.outline || '',
+                        planConnPrev: volData?.connection_to_prev || '',
+                        planConnNext: volData?.connection_to_next || '',
+                        planCharacters: (volData?.characters || []).map(c => ({...c})),
+                        planForeshadowings: [...(volData?.foreshadowings || [])],
+                        // 跨章人物出场表
+                        planChapterCharMap: {},  // {chapter_index: [character_names]}
+                        planCharWarnings: [],
+                        savingPlan: false
+                    }
+                    return volumeUiState[volId]
+                }
+                function toggleVolume(volId) {
+                    const ui = getVolUi(volId)
+                    ui.open = !ui.open
+                    saveVolumeState(volId, ui.open)
+                }
+                function startRenameVolume(volId, currentTitle) {
+                    const ui = getVolUi(volId)
+                    ui.renaming = true
+                    ui.newTitle = currentTitle
+                }
+                function cancelRenameVolume(volId) {
+                    const ui = getVolUi(volId)
+                    ui.renaming = false
+                    ui.newTitle = ''
+                }
+
+                async function saveVolumePlan(workId, vol) {
+                    if (!workId || !vol) return
+                    const ui = volumeUiState[vol.id]
+                    if (!ui) return
+                    ui.savingPlan = true
+                    // 保存前运行一次校验
+                    validateChapterCharacters(vol.id)
+                    // 构建 chapter_characters 数据
+                    const charChapterList = vol.chapters.map((ch, idx) => {
+                        const names = ui.planChapterCharMap[idx] || []
+                        return {
+                            chapter_num: vol._globalIdx + idx + 1,
+                            title: ch.title || `第${vol._globalIdx + idx + 1}章`,
+                            characters: names.filter(n => n && n.trim())
+                        }
+                    })
+                    try {
+                        const r = await fetch(`/api/v1/works/${workId}/volumes/${vol.id}`, {
+                            method: 'PUT',
+                            headers: {'Content-Type': 'application/json'},
+                            body: JSON.stringify({
+                                outline: ui.planOutline,
+                                responsibility: ui.planResponsibility,
+                                connection_to_prev: ui.planConnPrev,
+                                connection_to_next: ui.planConnNext,
+                                characters: ui.planCharacters.filter(c => c.name.trim()),
+                                foreshadowings: ui.planForeshadowings.filter(f => f.trim()),
+                                chapter_characters: charChapterList
+                            })
+                        })
+                        const result = await r.json()
+                        console.log('[TaleForge] saveVolumePlan response:', {
+                            hasWork: !!result.work,
+                            workTitle: result.work?.title,
+                            volumes: (result.work?.volumes||[]).map(v => `${v.id?.slice(0,8)}:${v.title||'?'}(${(v.chapter_ids||[]).length}ch)`)
+                        })
+                        if (result.work) {
+                            selectedWork.value = result.work
+                            showToast('卷规划已保存', 'success')
+                        } else {
+                            showToast('保存失败: 服务器无响应', 'error')
+                        }
+                    } catch (e) {
+                        showToast('保存失败: ' + e.message, 'error')
+                    } finally {
+                        ui.savingPlan = false
+                    }
+                }
+
+                // === 跨章人物出场表辅助函数 ===
+                function toggleChapterChar(vol, chapterIdx, charName) {
+                    const ui = volumeUiState[vol.id]
+                    if (!ui) return
+                    if (!ui.planChapterCharMap[chapterIdx]) {
+                        ui.planChapterCharMap[chapterIdx] = []
+                    }
+                    const list = ui.planChapterCharMap[chapterIdx]
+                    const idx = list.indexOf(charName)
+                    if (idx >= 0) {
+                        list.splice(idx, 1)
+                    } else {
+                        list.push(charName)
+                    }
+                    // 实时校验
+                    validateChapterCharacters(vol.id)
+                }
+                function isCharInChapter(vol, chapterIdx, charName) {
+                    const ui = volumeUiState[vol.id]
+                    if (!ui || !ui.planChapterCharMap[chapterIdx]) return false
+                    return ui.planChapterCharMap[chapterIdx].includes(charName)
+                }
+                function isFirstChapterChar(vol, chapterIdx, charName) {
+                    const ui = volumeUiState[vol.id]
+                    if (!ui) return false
+                    // 遍历前面所有章节，如果都没出现，则当前章是首次
+                    for (let i = 0; i < chapterIdx; i++) {
+                        const list = ui.planChapterCharMap[i]
+                        if (list && list.includes(charName)) return false
+                    }
+                    // 当前章必须包含该角色
+                    const cur = ui.planChapterCharMap[chapterIdx]
+                    return cur && cur.includes(charName)
+                }
+                function getChapterCharStatus(vol, chapterIdx, charName) {
+                    const ui = volumeUiState[vol.id]
+                    if (!ui || !ui.planChapterCharMap[chapterIdx]) return 'bg-gray-100 text-gray-400 border border-gray-200'
+                    return ui.planChapterCharMap[chapterIdx].includes(charName)
+                        ? 'bg-purple-100 text-purple-700 border border-purple-300'
+                        : 'bg-gray-100 text-gray-500 border border-gray-200 hover:border-gray-300'
+                }
+                function fillAllChapterCharacters(vol) {
+                    const ui = volumeUiState[vol.id]
+                    if (!ui) return
+                    const charNames = ui.planCharacters.filter(pc => pc.name && pc.name.trim()).map(pc => pc.name.trim())
+                    vol.chapters.forEach((ch, idx) => {
+                        ui.planChapterCharMap[idx] = [...charNames]
+                    })
+                    validateChapterCharacters(vol.id)
+                }
+                function validateChapterCharacters(volId) {
+                    const ui = volumeUiState[volId]
+                    if (!ui) return
+                    const warnings = []
+                    const charNames = ui.planCharacters.filter(pc => pc.name && pc.name.trim()).map(pc => pc.name.trim())
+                    const allAssigned = new Set()
+                    Object.values(ui.planChapterCharMap).forEach(list => {
+                        if (list) list.forEach(n => allAssigned.add(n))
+                    })
+                    // 警告A：角色在总库但从未出场
+                    charNames.forEach(name => {
+                        if (!allAssigned.has(name)) {
+                            warnings.push(`角色「${name}」在出场人物库中但未在任何章节出场`)
+                        }
+                    })
+                    // 警告B：出场表中出现总库没有的角色
+                    allAssigned.forEach(name => {
+                        if (!charNames.includes(name)) {
+                            warnings.push(`角色「${name}」出现在出场表中但不在本卷出场人物库中`)
+                        }
+                    })
+                    ui.planCharWarnings = warnings
+                }
+
+                // Volume collapse state persistence (P3-15)
+                const VOLUME_STATE_KEY = 'taleforge_volume_state_'
+                function getVolumeStateKey() {
+                    const work = selectedWork.value
+                    return work ? VOLUME_STATE_KEY + work.id : null
+                }
+                function saveVolumeState(volId, isOpen) {
+                    const key = getVolumeStateKey()
+                    if (!key) return
+                    try {
+                        const state = JSON.parse(localStorage.getItem(key) || '{}')
+                        state[volId] = isOpen
+                        localStorage.setItem(key, JSON.stringify(state))
+                    } catch (e) { /* ignore */ }
+                }
+
+                const volumeNodes = computed(() => {
+                    const work = selectedWork.value
+                    if (!work || !work.volumes || !Array.isArray(work.volumes)) {
+                        console.log('[TaleForge] volumeNodes: no work/volumes data', {hasWork: !!work, hasVolumes: !!(work?.volumes)})
+                        return []
+                    }
+                    const chapters = selectedWorkChapters.value || []
+                    const chapterMap = {}
+                    chapters.forEach(c => { chapterMap[c.id] = c })
+                    let globalIdx = 0
+                    let savedState = {}
+                    try {
+                        const key = getVolumeStateKey()
+                        if (key) savedState = JSON.parse(localStorage.getItem(key) || '{}')
+                    } catch (e) { /* ignore */ }
+                    const nodes = work.volumes.map(v => {
+                        // Seed volumeUiState entry if missing
+                        const initialState = savedState[v.id] !== undefined ? savedState[v.id] : true
+                        const ui = getVolUi(v.id, v)
+                        ui.open = savedState[v.id] !== undefined ? savedState[v.id] : true
+                        const volChapters = (v.chapter_ids || []).map(cid => chapterMap[cid]).filter(Boolean)
+                        // 初始化跨章人物出场表：从已有 chapter_characters 数据填充
+                        if (Object.keys(ui.planChapterCharMap).length === 0 && v.chapter_characters && v.chapter_characters.length > 0) {
+                            v.chapter_characters.forEach((cc, idx) => {
+                                if (idx < volChapters.length) {
+                                    ui.planChapterCharMap[idx] = [...(cc.characters || [])]
+                                }
+                            })
+                        }
+                        // 计算角色名称列表（从 planCharacters 中提取有名字的角色）
+                        const charNames = ui.planCharacters.filter(pc => pc.name && pc.name.trim()).map(pc => pc.name.trim())
+                        const node = {
+                            id: v.id,
+                            number: v.number,
+                            title: v.title || `第${v.number}卷`,
+                            chapters: volChapters,
+                            chapter_ids: v.chapter_ids || [],
+                            _open: ui.open,
+                            _renaming: ui.renaming,
+                            _newTitle: ui.newTitle,
+                            _planOpen: ui.planOpen,
+                            _planResponsibility: ui.planResponsibility,
+                            _planOutline: ui.planOutline,
+                            _planConnPrev: ui.planConnPrev,
+                            _planConnNext: ui.planConnNext,
+                            _planCharacters: ui.planCharacters,
+                            _planForeshadowings: ui.planForeshadowings,
+                            _savingPlan: ui.savingPlan,
+                            _globalIdx: globalIdx,
+                            // 跨章人物出场表字段
+                            _planChapterCharMap: ui.planChapterCharMap,
+                            _planCharacterNames: charNames,
+                            _charWarnings: ui.planCharWarnings,
+                            _validateChars: () => validateChapterCharacters(v.id)
+                        }
+                        globalIdx += volChapters.length
+                        return node
+                    })
+                    console.log('[TaleForge] volumeNodes:', nodes.length, '个卷, 共', nodes.reduce((s,n)=>s+n.chapters.length,0), '章')
+                    nodes.forEach(n => console.log(`  卷[${n.id.slice(0,8)}] "${n.title}" — ${n.chapters.length}章, chapter_ids=${n.chapter_ids.length}`))
+                    return nodes
+                })
+                const workForm = reactive({
+                    title: '', world_setting: '', outline: '', genre: '奇幻', style: '史诗'
+                })
+                
+                const agents = reactive([
+                    { name: 'planner', label: '策划', status: 'waiting', message: '等待中', data: null, expanded: false },
+                    { name: 'character', label: '角色', status: 'waiting', message: '等待中', data: null, expanded: false },
+                    { name: 'writer', label: '写作', status: 'waiting', message: '等待中', data: null, expanded: false },
+                    { name: 'polisher', label: '润色', status: 'waiting', message: '等待中', data: null, expanded: false }
+                ])
+
+                const getAgentClass = (agent) => {
+                    switch(agent.status) {
+                        case 'running': return 'border-yellow-400 bg-yellow-50 agent-running';
+                        case 'writing': return 'border-blue-400 bg-blue-50 agent-writing';
+                        case 'done': return 'agent-done border-green-400';
+                        case 'error': return 'border-red-400 bg-red-50';
+                        default: return 'border-gray-200 bg-gray-50';
+                    }
+                }
+
+                const getAgentIcon = (agent) => {
+                    const icons = {
+                        planner: 'fa-lightbulb',
+                        character: 'fa-user',
+                        writer: 'fa-pencil',
+                        polisher: 'fa-spell-check'
+                    }
+                    const base = icons[agent.name] || 'fa-circle'
+                    switch(agent.status) {
+                        case 'running': return `${base} text-yellow-500`;
+                        case 'writing': return `${base} text-blue-500`;
+                        case 'done': return `${base} text-green-500`;
+                        case 'error': return `${base} text-red-500`;
+                        default: return `${base} text-gray-400`;
+                    }
+                }
+
+                const formatAgentData = (data) => {
+                    if (typeof data === 'string') return data.substring(0, 200) + (data.length > 200 ? '...' : '')
+                    return JSON.stringify(data).substring(0, 200) + '...'
+                }
+
+                const addCharacter = () => {
+                    charactersList.value.push({ 
+                        name: '', age: '', identity: '', appearance: '', 
+                        personality: '', background: '', motivation: '', 
+                        relationships: [], is_template: false 
+                    })
+                }
+
+                const addCharacterFromTemplate = (template) => {
+                    charactersList.value.push({ ...template, relationships: [...template.relationships], is_template: true })
+                    showCharacterModal.value = false
+                }
+
+                const addCharacterConfirm = () => {
+                    charactersList.value.push({ ...newCharacter, relationships: [], is_template: false })
+                    Object.assign(newCharacter, { name: '', age: '', identity: '', appearance: '', personality: '', background: '', motivation: '' })
+                    showCharacterAddModal.value = false
+                }
+
+                const cancelCharacterAdd = () => {
+                    Object.assign(newCharacter, { name: '', age: '', identity: '', appearance: '', personality: '', background: '', motivation: '' })
+                    showCharacterAddModal.value = false
+                }
+
+                const applyStoryTemplate = (template) => {
+                    storyForm.genre = template.genre
+                    storyForm.style = template.style
+                    storyForm.perspective = template.perspective
+                    storyForm.conflict = template.conflict
+                    storyForm.mood = template.mood
+                    storyForm.background = template.background
+                    storyForm.outline = template.outline
+                    selectedTemplate.value = template
+                    showTemplateModal.value = false
+                }
+
+                const removeCharacter = (index) => {
+                    charactersList.value.splice(index, 1)
+                }
+
+                const addForeshadowing = () => {
+                    foreshadowings.value.push('')
+                }
+
+                const removeForeshadowing = (index) => {
+                    foreshadowings.value.splice(index, 1)
+                }
+
+                const generateStory = async () => {
+                    lastSavedStoryId.value = ''
+                    agents.forEach(a => { a.status = 'waiting'; a.message = '等待中'; a.data = null; a.expanded = false })
+                    storyContent.value = ''
+                    currentTitle.value = ''
+                    isGenerating.value = true
+                    generationProgress.value = 0
+                    generationStepLabel.value = '准备中...'
+
+                    const chars = charactersList.value
+                        .filter(c => c.name.trim())
+                        .map(c => ({ 
+                            name: c.name, age: c.age, identity: c.identity, appearance: c.appearance,
+                            personality: c.personality, background: c.background, motivation: c.motivation,
+                            relationships: c.relationships
+                        }))
+
+                    try {
+                        const response = await fetch('/api/v1/story/generate', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                theme: storyForm.theme,
+                                genre: storyForm.genre,
+                                style: storyForm.style,
+                                length: storyForm.length,
+                                background: storyForm.background,
+                                perspective: storyForm.perspective,
+                                conflict: storyForm.conflict,
+                                mood: storyForm.mood,
+                                outline: storyForm.outline,
+                                characters: chars,
+                                api_key: apiKey.value,
+                                world_setting: storyForm.world_setting,
+                                foreshadowings: foreshadowings.value,
+                                continuation_mode: storyForm.continuation_mode,
+                                previous_story_id: storyForm.previous_story_id,
+                                work_id: storyForm.work_id,
+                                chapter_number: storyForm.chapter_number,
+                                volume_id: storyForm.volume_id
+                            })
+                        })
+
+                        const reader = response.body.getReader()
+                        const decoder = new TextDecoder()
+                        let buffer = ''
+
+                        while (true) {
+                            const { done, value } = await reader.read()
+                            if (done) break
+
+                            buffer += decoder.decode(value, { stream: true })
+                            const lines = buffer.split('\n')
+                            buffer = lines.pop() || ''
+
+                            for (const line of lines) {
+                                if (!line.startsWith('data: ')) continue
+                                
+                                const eventData = line.substring(6)
+                                try {
+                                    const data = JSON.parse(eventData)
+                                    const agent = agents.find(a => a.name === data.agent)
+                                    
+                                    if (data.agent && data.status) {
+                                        if (agent) {
+                                            agent.status = data.status
+                                            agent.message = data.message || ''
+                                        }
+                                        // Update generation progress (P3-08)
+                                        if (data.status === 'running' || data.status === 'writing') {
+                                            const progressMap = {
+                                                planner: { pct: 15, label: '策划故事框架...' },
+                                                character: { pct: 35, label: '构建角色设定...' },
+                                                writer: { pct: 60, label: '创作故事内容...' },
+                                                polisher: { pct: 85, label: '润色文字...' },
+                                            }
+                                            const step = progressMap[data.agent]
+                                            if (step) {
+                                                generationProgress.value = step.pct
+                                                generationStepLabel.value = step.label
+                                            }
+                                        }
+                                        if (data.agent === 'orchestrator' && data.status === 'complete') {
+                                            generationProgress.value = 100
+                                            generationStepLabel.value = '生成完成'
+                                        }
+                                        
+                                        if (data.data) {
+                                            if (agent) agent.data = data.data
+                                            if (data.agent === 'writer' && data.status === 'writing') {
+                                                storyContent.value += data.data
+                                            } else if (data.agent === 'polisher' && data.status === 'writing') {
+                                                storyContent.value = data.data
+                                            } else if (data.agent === 'writer' && data.status === 'done') {
+                                                storyContent.value = data.data.content || data.data
+                                            }
+                                        }
+
+                                        if (data.agent === 'orchestrator' && data.status === 'complete') {
+                                            currentTitle.value = data.data.title || storyForm.theme
+                                            storyContent.value = data.data.content || storyContent.value
+                                        }
+                                    }
+                                } catch (e) {
+                                    console.error('Parse error:', e)
+                                }
+                            }
+                        }
+                    } catch (e) {
+                        console.error('Generation error:', e)
+                    } finally {
+                        isGenerating.value = false
+                        if (storyContent.value.trim()) await saveStory(false)
+                    }
+                }
+
+                const saveStory = async (showAlert = true) => {
+                    try {
+                        const response = await fetch('/api/v1/story/save', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                title: currentTitle.value || storyForm.theme,
+                                content: storyContent.value,
+                                theme: storyForm.theme,
+                                genre: storyForm.genre,
+                                style: storyForm.style,
+                                world_setting: storyForm.world_setting,
+                                foreshadowings: foreshadowings.value,
+                                previous_story_id: storyForm.previous_story_id,
+                                series_id: storyForm.work_id,
+                                series_order: storyForm.chapter_number
+                            })
+                        })
+                        const savedData = await response.json()
+                        const story_id = savedData?.id || savedData?.story_id
+                        if (storyForm.work_id && story_id) {
+                            await fetch(`/api/v1/works/${storyForm.work_id}/chapters`, {
+                                method: 'POST',
+                                headers: {'Content-Type': 'application/json'},
+                                body: JSON.stringify({story_id: story_id, volume_id: storyForm.volume_id})
+                            })
+                        }
+                        await loadHistory()
+                        if (showAlert) showToast('保存成功', 'success')
+                        // 记录最后保存的 story_id 以便续写
+                        if (story_id) lastSavedStoryId.value = story_id
+                    } catch (e) {
+                        console.error(e)
+                    }
+                }
+
+                // 生成后快速续写下一章
+                const lastSavedStoryId = ref('')
+                const continueNextChapter = async () => {
+                    // 先保存当前内容（如果没保存过）
+                    if (!lastSavedStoryId.value && storyContent.value.trim()) {
+                        await saveStory(false)
+                    }
+                    if (!lastSavedStoryId.value) {
+                        showToast('请先保存当前章节', 'warning')
+                        return
+                    }
+                    // 设好下一章的参数
+                    storyForm.previous_story_id = lastSavedStoryId.value
+                    storyForm.chapter_number = (storyForm.chapter_number || 0) + 1
+                    storyForm.continuation_mode = 'next_chapter'
+                    // 清空当前内容
+                    storyContent.value = ''
+                    currentTitle.value = ''
+                    lastSavedStoryId.value = ''
+                    // 滚动到顶部并立即触发生成
+                    window.scrollTo({ top: 0, behavior: 'smooth' })
+                    await generateStory()
+                }
+
+                // 返回作品详情
+                const backToWorkDetail = async () => {
+                    if (storyForm.work_id) {
+                        // 跳转到作品 tab 并打开详情
+                        currentTab.value = 'works'
+                        await loadWorks()
+                        const work = works.value.find(w => w.id === storyForm.work_id)
+                        if (work) await viewWork(work)
+                    } else {
+                        currentTab.value = 'works'
+                    }
+                }
+
+                // === 一键生成全卷 ===
+                const generateVolume = async (work, vol) => {
+                    if (!work || !vol) return
+                    if (!apiKey.value) {
+                        showToast('请先在设置中配置 API Key', 'warning')
+                        return
+                    }
+                    const chapters = vol.chapter_characters || []
+                    if (chapters.length === 0) {
+                        showToast('该卷未定义章节角色表，请先在「规划」中配置章节和出场角色', 'warning')
+                        return
+                    }
+                    // 检查是否已有章节
+                    if (vol.chapters && vol.chapters.length > 0) {
+                        const ok = await ModalConfirm({
+                            title: '全卷生成',
+                            message: `该卷已有 ${vol.chapters.length} 章已保存内容，一键生成将覆盖并重新创建所有章节。确定继续？`,
+                            type: 'warning',
+                            confirmText: '确认覆盖'
+                        })
+                        if (!ok) return
+                    }
+                    batchGenerating.value = true
+                    batchProgress.current = 0
+                    batchProgress.total = chapters.length
+                    showWorkDetail.value = false
+                    currentTab.value = 'create'
+                    let prevId = ''
+                    let allOk = true
+                    try {
+                        for (let i = 0; i < chapters.length; i++) {
+                            const ch = chapters[i]
+                            batchProgress.current = i + 1
+                            showToast(`正在生成第 ${i+1}/${chapters.length} 章「${ch.title || ''}」...`, 'info', 3000)
+                            // 设置表单
+                            storyForm.theme = work.title
+                            storyForm.genre = work.genre || '短篇小说'
+                            storyForm.style = work.style || '奇幻'
+                            storyForm.length = 3000
+                            storyForm.background = ''
+                            storyForm.perspective = '第三人称有限'
+                            storyForm.conflict = '人与命运'
+                            storyForm.mood = '史诗'
+                            storyForm.world_setting = work.world_setting
+                            storyForm.work_id = work.id
+                            storyForm.volume_id = vol.id
+                            storyForm.chapter_number = ch.chapter_num || (i + 1)
+                            // 用卷大纲 + 本章关键事件作为 outline
+                            let chOutline = vol.outline || work.outline || ''
+                            if (ch.key_events && ch.key_events.length > 0) {
+                                chOutline += '\n\n本章关键事件：\n' + ch.key_events.join('\n')
+                            }
+                            storyForm.outline = chOutline
+                            // 填充本章出场角色
+                            const chCharNames = ch.characters || []
+                            if (vol.characters && vol.characters.length > 0) {
+                                charactersList.value = vol.characters
+                                    .filter(c => chCharNames.includes(c.name))
+                                    .map(c => ({
+                                        name: c.name || '', age: c.age || '',
+                                        identity: c.identity || '', appearance: c.appearance || '',
+                                        personality: c.personality || '', background: c.background || '',
+                                        motivation: c.motivation || '', relationships: c.relationships || [],
+                                        is_template: false
+                                    }))
+                            }
+                            // 填充伏笔
+                            const volFws = vol.foreshadowings || work.foreshadowings || []
+                            foreshadowings.value = [...volFws]
+                            // 续写链接
+                            storyForm.previous_story_id = prevId
+                            storyForm.continuation_mode = prevId ? 'next_chapter' : ''
+                            // 生成
+                            await generateStory()
+                            // 生成完成后自动保存，获取下一章的 previous_story_id
+                            if (lastSavedStoryId.value) {
+                                prevId = lastSavedStoryId.value
+                            } else if (storyContent.value.trim()) {
+                                // 手动保存兜底
+                                await saveStory(false)
+                                if (lastSavedStoryId.value) prevId = lastSavedStoryId.value
+                            }
+                        }
+                        showToast(`全卷生成完成！共 ${chapters.length} 章`, 'success')
+                    } catch (e) {
+                        allOk = false
+                        showToast('批量生成出错: ' + (e.message || '未知错误'), 'error')
+                    } finally {
+                        batchGenerating.value = false
+                        batchProgress.current = 0
+                        batchProgress.total = 0
+                        // 刷新作品详情
+                        currentTab.value = 'works'
+                        await loadWorks()
+                        const updatedWork = works.value.find(w => w.id === work.id)
+                        if (updatedWork) await viewWork(updatedWork)
+                    }
+                }
+
+                const copyStory = () => {
+                    navigator.clipboard.writeText(storyContent.value)
+                    showToast('已复制到剪贴板', 'success')
+                }
+
+                // === 灵感功能 ===
+                const getInspiration = async () => {
+                    if (!storyForm.theme.trim()) {
+                        showToast('请先输入故事主题', 'warning')
+                        return
+                    }
+                    isInspiring.value = true
+                    showInspiration.value = true
+                    inspireData.value = null
+                    inspireError.value = ''
+                    try {
+                        const r = await fetch('/api/v1/story/inspire', {
+                            method: 'POST',
+                            headers: {'Content-Type': 'application/json'},
+                            body: JSON.stringify({
+                                theme: storyForm.theme,
+                                world_setting: storyForm.world_setting,
+                                genre: storyForm.genre,
+                                style: storyForm.style,
+                                existing_outline: storyForm.outline,
+                                existing_foreshadowings: foreshadowings.value,
+                                api_key: apiKey.value
+                            })
+                        })
+                        const result = await r.json()
+                        if (result.success && result.data) {
+                            inspireData.value = result.data
+                        } else {
+                            inspireError.value = result.error || '获取灵感失败'
+                        }
+                    } catch (e) {
+                        inspireError.value = '网络错误: ' + e.message
+                    } finally {
+                        isInspiring.value = false
+                    }
+                }
+
+                const applyPlotPoint = (item) => {
+                    const line = `- 【${item.title}】${item.description}`
+                    if (storyForm.outline) {
+                        storyForm.outline += '\n' + line
+                    } else {
+                        storyForm.outline = line
+                    }
+                    showToast('已添加到梗概', 'success')
+                }
+
+                const applyForeshadowing = (item) => {
+                    foreshadowings.value.push(item.content)
+                    showToast('已添加到伏笔列表', 'success')
+                }
+
+                const applyCharacter = (item) => {
+                    charactersList.value.push({
+                        name: item.name || '',
+                        age: item.age || '',
+                        identity: item.identity || '',
+                        appearance: item.appearance || '',
+                        personality: item.personality || '',
+                        background: item.background || '',
+                        motivation: item.motivation || '',
+                        relationships: [],
+                        is_template: false
+                    })
+                    showToast(`已添加角色「${item.name}」`, 'success')
+                }
+
+                const loadHistory = async (page = 1) => {
+                    try {
+                        const params = new URLSearchParams({ page, page_size: 12 })
+                        if (searchQuery.value) params.set('search', searchQuery.value)
+                        if (searchGenre.value) params.set('genre', searchGenre.value)
+                        if (searchFavorite.value) params.set('favorite', searchFavorite.value)
+                        const response = await fetch(`/api/v1/history/?${params}`)
+                        const data = await response.json()
+                        history.value = data?.stories || []
+                        historyTotal.value = data?.total || 0
+                        historyPage.value = data?.page || 1
+                        historyTotalPages.value = data?.total_pages || 0
+                    } catch (e) {
+                        console.error(e)
+                    }
+                }
+
+                const viewStory = (story) => {
+                    selectedStory.value = story
+                    editContent.value = story.content
+                    isEditing.value = false
+                    showStoryDetail.value = true
+                }
+
+                const toggleFavorite = async (story) => {
+                    try {
+                        const response = await fetch(`/api/v1/history/${story.id}/favorite`, { method: 'PUT' })
+                        if (response.ok) {
+                            const data = await response.json()
+                            story.favorite = data.favorite
+                            showToast(data.favorite ? '已收藏' : '已取消收藏', 'success')
+                        }
+                    } catch (e) {
+                        console.error(e)
+                    }
+                }
+
+                const updateStory = async () => {
+                    try {
+                        const response = await fetch(`/api/v1/history/${selectedStory.value.id}`, {
+                            method: 'PUT',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ content: editContent.value })
+                        })
+                        if (response.ok) {
+                            selectedStory.value.content = editContent.value
+                            isEditing.value = false
+                            showToast('故事已更新', 'success')
+                            await loadHistory()
+                        }
+                    } catch (e) {
+                        showToast('更新失败: ' + e.message, 'error')
+                    }
+                }
+
+                const exportStory = async (storyId) => {
+                    try {
+                        const response = await fetch(`/api/v1/history/export/${storyId}?format=markdown`)
+                        if (!response.ok) throw new Error('导出失败')
+                        const blob = await response.blob()
+                        const url = URL.createObjectURL(blob)
+                        const a = document.createElement('a')
+                        a.href = url
+                        a.download = `story-${storyId}.md`
+                        a.click()
+                        URL.revokeObjectURL(url)
+                        showToast('故事已导出为 Markdown 文件', 'success')
+                    } catch (e) {
+                        showToast('导出失败：' + e.message, 'error')
+                    }
+                }
+
+                const deleteStory = async (storyId) => {
+                    const ok = await ModalConfirm({ title: '删除故事', message: '确定要删除这个故事吗？此操作不可撤销。', type: 'danger', confirmText: '确认删除' })
+                    if (!ok) return
+                    try {
+                        await fetch(`/api/v1/history/${storyId}`, { method: 'DELETE' })
+                        await loadHistory()
+                    } catch (e) {
+                        console.error(e)
+                    }
+                }
+
+                const continueStory = (story) => {
+                    storyForm.previous_story_id = story.id
+                    storyForm.theme = story.theme + ' - 续写'
+                    storyForm.world_setting = story.world_setting || ''
+                    foreshadowings.value = story.foreshadowings || []
+                    currentTab.value = 'create'
+                    showToast('已加载前作信息，您可以继续创作后续章节！', 'info')
+                }
+
+                async function loadWorks() {
+                    const r = await fetch('/api/v1/works/')
+                    if (r.ok) {
+                        const data = await r.json()
+                        works.value = data.works || []
+                        console.log('[TaleForge] loadWorks:', works.value.length, '部作品')
+                        works.value.forEach(w => console.log(`  [${w.id.slice(0,8)}] ${w.title} — volumes=${(w.volumes||[]).length} chapter_ids=${(w.chapter_ids||[]).length} volumes_chapter_ids=${(w.volumes||[]).map(v=>`${v.title||'?'}:${(v.chapter_ids||[]).length}`).join(', ')}`))
+                    }
+                }
+
+                async function createWork() {
+                    if (!workForm.title.trim()) return showToast('请输入作品名称', 'warning')
+                    const r = await fetch('/api/v1/works/', {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({...workForm})
+                    })
+                    if (r.ok) {
+                        const data = await r.json()
+                        const newWorkId = data.work_id
+                        showToast('作品创建成功', 'success')
+                        workForm.title = ''; workForm.world_setting = ''; workForm.outline = ''
+                        await loadWorks()
+                        // 自动打开新作品详情
+                        const newWork = works.value.find(w => w.id === newWorkId)
+                        if (newWork) setTimeout(() => viewWork(newWork), 300)
+                    } else showToast('创建失败', 'error')
+                }
+
+                async function viewWork(work) {
+                    const r = await fetch(`/api/v1/works/${work.id}`)
+                    if (r.ok) {
+                        const data = await r.json()
+                        selectedWork.value = data.work
+                        selectedWorkChapters.value = data.chapters || []
+                        console.log('[TaleForge] viewWork:', data.work?.title)
+                        console.log('  work:', JSON.stringify({
+                            id: data.work?.id?.slice(0,8),
+                            title: data.work?.title,
+                            has_outline: !!data.work?.outline,
+                            volumes_count: (data.work?.volumes||[]).length,
+                            volumes: (data.work?.volumes||[]).map(v => ({
+                                id: v.id?.slice(0,8),
+                                title: v.title,
+                                chapter_ids: (v.chapter_ids||[]).length,
+                                has_characters: (v.characters||[]).length,
+                                has_chapter_characters: (v.chapter_characters||[]).length
+                            }))
+                        }, null, 2))
+                        console.log(`  chapters loaded: ${data.chapters?.length || 0}`)
+                        ;(data.chapters||[]).forEach(c => console.log(`    [${c.id.slice(0,8)}] ${c.title||'?'} (${c.word_count||0}字)`))
+                        showWorkDetail.value = true
+                    }
+                }
+
+                async function deleteWork(id) {
+                    const ok = await ModalConfirm({ title: '删除作品', message: '确定删除该作品及其所有章节关联？此操作不可撤销。', type: 'danger', confirmText: '确认删除' })
+                    if (!ok) return
+                    const r = await fetch(`/api/v1/works/${id}`, {method: 'DELETE'})
+                    if (r.ok) { showToast('作品已删除', 'success'); await loadWorks() }
+                }
+
+                async function generateSummary(workId) {
+                    generatingSummary.value = true
+                    const r = await fetch(`/api/v1/works/${workId}/summary`, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({summary: ''})})
+                    if (r.ok) { showToast('概要已生成', 'success'); await viewWork(selectedWork.value) }
+                    generatingSummary.value = false
+                }
+
+                function startChapter(work, vol) {
+                    const targetVol = vol || work.volumes?.[0] || {}
+                    storyForm.theme = work.title
+                    storyForm.world_setting = work.world_setting
+                    storyForm.work_id = work.id
+                    storyForm.volume_id = targetVol.id || ''
+                    // 自动填充卷大纲
+                    if (targetVol.outline) {
+                        storyForm.outline = targetVol.outline
+                    } else if (work.outline) {
+                        storyForm.outline = work.outline
+                    }
+                    // 自动填充角色（从卷的角色列表）
+                    if (targetVol.characters && targetVol.characters.length > 0) {
+                        charactersList.value = targetVol.characters.map(c => ({
+                            name: c.name || '',
+                            age: c.age || '',
+                            identity: c.identity || '',
+                            appearance: c.appearance || '',
+                            personality: c.personality || '',
+                            background: c.background || '',
+                            motivation: c.motivation || '',
+                            relationships: c.relationships || [],
+                            is_template: false
+                        }))
+                    }
+                    // 自动填充伏笔（从作品级伏笔）
+                    if (work.foreshadowings && work.foreshadowings.length > 0) {
+                        foreshadowings.value = [...work.foreshadowings]
+                    }
+                    // 计算章节序号
+                    const existingChapters = selectedWorkChapters.value?.length || 0
+                    if (existingChapters > 0) {
+                        const lastCh = selectedWorkChapters.value[existingChapters - 1]
+                        storyForm.previous_story_id = lastCh.id
+                        storyForm.continuation_mode = 'next_chapter'
+                        storyForm.chapter_number = existingChapters + 1
+                    } else {
+                        storyForm.chapter_number = 1
+                        storyForm.previous_story_id = ''
+                        storyForm.continuation_mode = ''
+                    }
+                    showWorkDetail.value = false
+                    currentTab.value = 'create'
+                }
+
+                function continueFromChapter(work, chapter) {
+                    storyForm.theme = work.title
+                    storyForm.world_setting = work.world_setting
+                    storyForm.work_id = work.id
+                    storyForm.volume_id = work.volumes?.[0]?.id || ''
+                    storyForm.chapter_number = (chapter.series_order || 0) + 1
+                    storyForm.previous_story_id = chapter.id
+                    storyForm.continuation_mode = 'next_chapter'
+                    // 带入已有伏笔
+                    if (work.foreshadowings && work.foreshadowings.length) {
+                        foreshadowings.value = [...work.foreshadowings]
+                    }
+                    // 带入上章角色
+                    if (chapter.characters && chapter.characters.length) {
+                        charactersList.value = chapter.characters.map(c => ({
+                            name: c.name || '',
+                            age: c.age || '',
+                            identity: c.identity || '',
+                            appearance: c.appearance || '',
+                            personality: c.personality || '',
+                            background: c.background || '',
+                            motivation: c.motivation || '',
+                            relationships: c.relationships || [],
+                            is_template: false
+                        }))
+                    }
+                    showWorkDetail.value = false
+                    currentTab.value = 'create'
+                }
+
+                async function addVolume(workId) {
+                    if (!workId) return
+                    const r = await fetch(`/api/v1/works/${workId}/volumes`, {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({title: ''})
+                    })
+                    if (r.ok) { showToast('已添加新卷', 'success'); await viewWork(selectedWork.value) }
+                }
+
+                async function deleteVolume(workId, vol) {
+                    const ok = await ModalConfirm({ title: '删除卷', message: `确定删除「${vol.title}」吗？卷内的章节将自动移入前一卷。`, type: 'danger', confirmText: '确认删除' })
+                    if (!ok) return
+                    const r = await fetch(`/api/v1/works/${workId}/volumes/${vol.id}`, {method: 'DELETE'})
+                    if (r.ok) { showToast('卷已删除', 'success'); await viewWork(selectedWork.value) }
+                }
+
+                async function renameVolume(workId, vol) {
+                    const newTitle = vol._newTitle || vol.title
+                    cancelRenameVolume(vol.id)
+                    const r = await fetch(`/api/v1/works/${workId}/volumes/${vol.id}`, {
+                        method: 'PUT',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({title: newTitle})
+                    })
+                    if (r.ok) { await viewWork(selectedWork.value) }
+                }
+
+                function viewChapter(chapter) {
+                    // 从正文中提取标题，使其与正文标题对应
+                    const content = chapter.content || ''
+                    const headingMatch = content.match(/^#{1,4}\s+(.+)$/m)
+                    const chapterTitle = headingMatch ? headingMatch[1].trim() : (chapter.title || '')
+                    previewChapter.value = { ...chapter, title: chapterTitle || chapter.title }
+                }
+
+                function openEditChapter() {
+                    if (previewChapter.value) {
+                        selectedStory.value = previewChapter.value
+                        isEditing.value = false
+                        editContent.value = ''
+                        showStoryDetail.value = true
+                    }
+                }
+
+                const saveApiKey = async () => {
+                    savingKey.value = true
+                    try {
+                        const response = await fetch('/api/v1/config/api-key', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ api_key: apiKey.value })
+                        })
+                        const data = await response.json()
+                        if (data.success) {
+                            localStorage.setItem('deepseek_api_key', apiKey.value)
+                            showToast('API Key 保存成功', 'success')
+                        } else {
+                            showToast('保存失败，请检查文件权限', 'error')
+                        }
+                    } catch (e) {
+                        console.error(e)
+                    } finally {
+                        savingKey.value = false
+                    }
+                }
+
+                const formatDate = (dateStr) => {
+                    const date = new Date(dateStr)
+                    return date.toLocaleString('zh-CN')
+                }
+
+                const showError = (message, title = '错误') => {
+                    console.error(`${title}:`, message)
+                    showToast(`${title}: ${message}`, 'error')
+                }
+
+                // --- Toast System with Queue (P3-02) ---
+                let toastIdCounter = 0
+                const showToast = (message, type = 'info', duration = 3000) => {
+                    const container = document.getElementById('toast-container')
+                    if (!container) return
+                    const id = ++toastIdCounter
+                    const toast = document.createElement('div')
+                    toast.id = `toast-${id}`
+                    toast.className = `toast toast-${type}`
+                    toast.style.cursor = 'pointer'
+                    toast.setAttribute('role', 'alert')
+                    // 图标
+                    const icons = { success: 'fa-check-circle', error: 'fa-circle-exclamation', warning: 'fa-triangle-exclamation', info: 'fa-circle-info' }
+                    toast.innerHTML = `<i class="fa-solid ${icons[type] || icons.info} mr-2"></i><span>${message}</span>`
+                    toast.addEventListener('click', () => {
+                        toast.classList.remove('show')
+                        setTimeout(() => toast.remove(), 300)
+                    })
+                    container.appendChild(toast)
+                    requestAnimationFrame(() => toast.classList.add('show'))
+                    if (duration > 0) {
+                        setTimeout(() => {
+                            toast.classList.remove('show')
+                            setTimeout(() => toast.remove(), 300)
+                        }, duration)
+                    }
+                }
+
+                // --- Tab State Persistence (P3-04) ---
+                const FORM_STORAGE_KEY = 'taleforge_create_form'
+                function saveFormState() {
+                    try {
+                        const state = {
+                            storyForm: { ...storyForm },
+                            charactersList: charactersList.value,
+                            foreshadowings: [...foreshadowings.value],
+                            selectedTemplate: selectedTemplate.value ? { ...selectedTemplate.value } : null,
+                        }
+                        localStorage.setItem(FORM_STORAGE_KEY, JSON.stringify(state))
+                    } catch (e) { /* storage full, silently ignore */ }
+                }
+                function restoreFormState() {
+                    try {
+                        const raw = localStorage.getItem(FORM_STORAGE_KEY)
+                        if (!raw) return
+                        const state = JSON.parse(raw)
+                        if (state.storyForm) Object.assign(storyForm, state.storyForm)
+                        if (state.charactersList) charactersList.value = state.charactersList
+                        if (state.foreshadowings) foreshadowings.value = state.foreshadowings
+                        if (state.selectedTemplate) selectedTemplate.value = state.selectedTemplate
+                    } catch (e) { /* corrupted data, ignore */ }
+                }
+                function clearFormState() {
+                    localStorage.removeItem(FORM_STORAGE_KEY)
+                    storyForm.theme = ''; storyForm.genre = '短篇小说'; storyForm.style = '温馨'
+                    storyForm.length = 2000; storyForm.background = ''; storyForm.perspective = '第三人称全知'
+                    storyForm.conflict = '人与人'; storyForm.mood = '轻松愉快'; storyForm.outline = ''
+                    storyForm.world_setting = ''; storyForm.continuation_mode = 'next_chapter'
+                    storyForm.previous_story_id = ''; storyForm.work_id = ''
+                    charactersList.value = []; foreshadowings.value = []; selectedTemplate.value = null
+                    showToast('表单已清空', 'info')
+                }
+
+                // Tab 切换时自动保存表单
+                watch(currentTab, (newTab, oldTab) => {
+                    if (oldTab === 'create') saveFormState()
+                })
+
+                // --- Keyboard Shortcuts (P3-03) ---
+                function handleKeydown(e) {
+                    // ESC: 关闭最上层弹窗
+                    if (e.key === 'Escape') {
+                        if (confirmModal.show) { confirmModal.onCancel(); return }
+                        if (showWorkDetail.value && !previewChapter.value) { showWorkDetail.value = false; return }
+                        if (previewChapter.value) { previewChapter.value = null; return }
+                        if (showStoryDetail.value) { showStoryDetail.value = false; return }
+                        if (showSettings.value) { showSettings.value = false; return }
+                        if (showTemplateModal.value) { showTemplateModal.value = false; return }
+                        if (showCharacterModal.value) { showCharacterModal.value = false; return }
+                        if (showCharacterAddModal.value) { showCharacterAddModal.value = false; return }
+                    }
+                    // Ctrl+Enter: 触发生成
+                    if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+                        if (currentTab.value === 'create' && !isGenerating.value && storyForm.theme.trim()) {
+                            e.preventDefault()
+                            generateStory()
+                        }
+                    }
+                    // Ctrl+S: 保存故事
+                    if (e.key === 's' && (e.ctrlKey || e.metaKey)) {
+                        if (storyContent.value && isEditing.value) {
+                            e.preventDefault()
+                            updateStory()
+                        }
+                    }
+                }
+
+                onMounted(() => {
+                    document.addEventListener('keydown', handleKeydown)
+                    try {
+                        apiKey.value = localStorage.getItem('deepseek_api_key') || ''
+                    } catch (e) {
+                        apiKey.value = ''
+                    }
+                    restoreFormState()
+                    loadHistory()
+                })
+
+                return {
+                    currentTab, showSettings, showStoryDetail, showCharacterModal, showCharacterAddModal, showTemplateModal,
+                    selectedStory, isEditing, editContent, selectedTemplate, isGenerating, savingKey,
+                    storyContent, currentTitle, apiKey, newCharacter,
+                    genres, styles, perspectives, conflicts, moods,
+                    storyForm, charactersList, foreshadowings, history, agents,
+                    characterTemplates, storyTemplates,
+                    works, showWorkDetail, selectedWork, selectedWorkChapters, workForm, generatingSummary,
+                    getAgentClass, getAgentIcon, formatAgentData,
+                    generateStory, saveStory, copyStory, loadHistory,
+                    viewStory, toggleFavorite, updateStory, deleteStory, saveApiKey, formatDate,
+                    addCharacter, addCharacterFromTemplate, addCharacterConfirm, cancelCharacterAdd, applyStoryTemplate,
+                    removeCharacter, addForeshadowing, removeForeshadowing, continueStory,
+                    showError, showToast, exportStory, searchQuery, searchGenre, searchFavorite,
+                    saveFormState, restoreFormState, clearFormState,
+                    generationProgress, generationStepLabel, batchGenerating, batchProgress,
+                    historyPage, historyTotalPages, historyTotal,
+                    loadWorks, createWork, viewWork, deleteWork, generateSummary, filteredWorks, workSearchQuery,
+                    startChapter, continueFromChapter, viewChapter, openEditChapter,
+                    volumeNodes, addVolume, deleteVolume, renameVolume, previewChapter, saveVolumeState,
+                    volumeUiState, toggleVolume, startRenameVolume, cancelRenameVolume,
+                    saveVolumePlan, generateVolume, getVolUi,
+                    toggleChapterChar, isCharInChapter, isFirstChapterChar,
+                    getChapterCharStatus, fillAllChapterCharacters, validateChapterCharacters,
+                    confirmModal, ModalConfirm,
+                    showInspiration, isInspiring, inspireData, inspireError,
+                    getInspiration, applyPlotPoint, applyForeshadowing, applyCharacter,
+                    continueNextChapter, backToWorkDetail, lastSavedStoryId
+                }
+            }
+        })
+
+        app.config.errorHandler = (err, vm, info) => {
+            console.error('Global Vue Error:', err, info)
+            try {
+                if (err.message && !err.message.includes('Cannot read properties')) {
+                    alert(`应用发生错误: ${err.message}`)
+                }
+            } catch (e) {
+                console.error('Error alert failed:', e)
+            }
+        }
+
+        app.mount('#app')
+    </script>
+</body>
+</html>
