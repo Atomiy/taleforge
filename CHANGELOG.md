@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-07-14
+
 ### Added
 
 - **可编辑章节规划列表**：规划面板新增章节槽列表，支持添加/移除/同步章节，每个槽可编辑标题和大纲
@@ -26,7 +28,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- **章节标题错存为作品名**：旧数据中标题等于作品名的，加载时从正文 heading 自动提取真实标题
+- **章节标题错存为作品名**（作品列表 + 历史记录）：加载时从正文 heading 自动提取真实标题，修复旧数据缺陷
+- **历史记录标题显示**：与作品列表相同的标题提取逻辑，确保历史页面不显示主题名替代标题
 - **卷规划伏笔显示 [object Object]**：AI 返回对象格式伏笔导致列表显示错误
 - **卷规划保存崩溃**：`.trim()` 在对象上抛异常导致规划无法保存
 - **startChapter 不设章节标题**：之前不设 `currentTitle` 导致显示空白或回退到作品名

@@ -2963,7 +2963,14 @@
                         if (searchFavorite.value) params.set('favorite', searchFavorite.value)
                         const response = await fetch(`/api/v1/history/?${params}`)
                         const data = await response.json()
-                        history.value = data?.stories || []
+                        history.value = (data?.stories || []).map(s => {
+                            // 如果标题等于主题（旧数据缺陷），从正文提取真实标题
+                            if (s.title === s.theme && s.content) {
+                                const m = s.content.match(/^#{1,4}\s+(.+)$/m)
+                                if (m) s.title = m[1].trim()
+                            }
+                            return s
+                        })
                         historyTotal.value = data?.total || 0
                         historyPage.value = data?.page || 1
                         historyTotalPages.value = data?.total_pages || 0
