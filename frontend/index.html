@@ -121,6 +121,16 @@
                                     <input v-model="storyForm.theme" type="text" placeholder="输入故事主题或关键词" 
                                         class="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-purple-500 focus:border-transparent outline-none transition">
                                 </div>
+                                <!-- 续写状态指示器 -->
+                                <div v-if="storyForm.continuation_mode === 'next_chapter'" class="flex items-center gap-2 px-3 py-2 bg-blue-50 border border-blue-200 rounded-lg">
+                                    <i class="fa-solid fa-link text-blue-500 text-xs"></i>
+                                    <span class="text-xs text-blue-700">
+                                        续写模式：正在创作第 <strong>{{storyForm.chapter_number || 1}}</strong> 章
+                                    </span>
+                                    <span v-if="lastChapterTitle" class="text-xs text-blue-400">（上一章：{{lastChapterTitle}}）</span>
+                                    <button @click="storyForm.continuation_mode = ''; storyForm.previous_story_id = ''; lastChapterTitle = ''" 
+                                        class="ml-auto text-xs text-blue-500 hover:text-blue-700 underline">取消续写</button>
+                                </div>
                                 <div class="grid grid-cols-2 gap-3">
                                     <div>
                                         <label class="block text-sm font-medium text-gray-700 mb-1">体裁</label>
@@ -188,10 +198,10 @@
                                     <textarea v-model="storyForm.outline" rows="3" placeholder="简要描述故事的大致情节和走向" 
                                         class="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-purple-500 focus:border-transparent outline-none transition resize-none"></textarea>
                                 </div>
-                                <button @click="getInspiration" :disabled="isInspiring || !storyForm.theme.trim()"
+                                <button @click="openInspiration" :disabled="!storyForm.theme.trim()"
                                     class="w-full px-3 py-2 bg-gradient-to-r from-purple-500 to-indigo-500 text-white rounded-xl hover:from-purple-600 hover:to-indigo-600 transition disabled:opacity-50 flex items-center justify-center gap-2 text-sm">
-                                    <i :class="isInspiring ? 'fa-solid fa-spinner animate-spin' : 'fa-solid fa-lightbulb'"></i>
-                                    {{ isInspiring ? 'AI 思考中...' : 'AI 给我灵感' }}
+                                    <i class="fa-solid fa-lightbulb"></i>
+                                    AI 给我灵感
                                 </button>
                             </div>
                         </div>
@@ -334,9 +344,13 @@
                         </div>
 
                         <div class="bg-white rounded-2xl shadow-lg p-6 min-h-[400px]">
-                            <h2 class="text-lg font-semibold mb-4 flex items-center truncate">
-                                <i class="fa-solid fa-book text-green-500 mr-2 shrink-0"></i>{{currentTitle || '故事内容'}}
-                            </h2>
+                            <div class="flex items-center gap-3 mb-4">
+                                <i class="fa-solid fa-book text-green-500 shrink-0"></i>
+                                <input v-model="currentTitle" placeholder="输入章节标题..."
+                                    class="flex-1 text-lg font-semibold px-3 py-1.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-purple-500 focus:border-transparent outline-none transition"
+                                    :class="{'border-purple-300': storyForm.work_id}">
+                                <span v-if="storyForm.chapter_number" class="text-xs text-gray-400 shrink-0">第{{storyForm.chapter_number}}章</span>
+                            </div>
                             <div v-if="storyContent" class="story-content text-gray-700 text-base scrollbar-thin h-[400px] overflow-y-auto break-words" v-html="renderMarkdown(storyContent)"></div>
                             <div v-else class="flex flex-col items-center justify-center h-[400px] text-gray-400">
                                 <i class="fa-solid fa-file-lines text-6xl mb-4"></i>
@@ -736,49 +750,125 @@
                     <button @click="showWorkDetail = false" class="text-gray-400 hover:text-gray-600 ml-2 shrink-0"><i class="fa-solid fa-xmark text-2xl"></i></button>
                 </div>
                 <!-- Body -->
-                <div class="p-6 overflow-y-auto flex-1">
-                    <!-- World Setting -->
-                    <div class="mb-4 p-4 bg-indigo-50 rounded-xl">
+                <div class="p-6 overflow-y-auto flex-1 space-y-4">
+                    <!-- 作品进度 -->
+                    <div class="p-4 bg-gradient-to-r from-slate-50 to-gray-50 rounded-xl border border-gray-200">
+                        <div class="flex items-center justify-between mb-2">
+                            <h3 class="font-medium text-gray-700 flex items-center gap-2">
+                                <i class="fa-solid fa-chart-simple text-gray-500"></i>作品进度
+                            </h3>
+                            <span class="text-sm font-semibold text-purple-600">
+                                {{workProgress.completed}} / {{workProgress.total}} 章（{{workProgress.percent}}%）
+                            </span>
+                        </div>
+                        <div class="w-full h-2.5 bg-gray-200 rounded-full overflow-hidden">
+                            <div class="h-full bg-gradient-to-r from-purple-500 to-indigo-500 rounded-full transition-all duration-500"
+                                :style="{width: workProgress.percent + '%'}"></div>
+                        </div>
+                        <p class="text-xs text-gray-400 mt-1.5 flex items-center gap-2">
+                            <span><i class="fa-solid fa-check-circle text-green-500 mr-0.5"></i>已完成 {{workProgress.completed}} 章</span>
+                            <span><i class="fa-regular fa-circle text-gray-300 mr-0.5"></i>待创作 {{workProgress.pending}} 章</span>
+                        </p>
+                    </div>
+
+                    <!-- 世界观设定 -->
+                    <div class="p-4 bg-gradient-to-br from-indigo-50 to-blue-50 rounded-xl border border-indigo-100">
                         <div class="flex items-center justify-between mb-2">
                             <h3 class="font-medium text-indigo-800 flex items-center gap-2">
                                 <i class="fa-solid fa-globe"></i>世界观设定
+                                <span class="text-xs text-indigo-400 font-normal">（故事世界的规则、地理、文明等背景设定）</span>
                             </h3>
                             <button @click="toggleWorkEdit('world_setting')" class="text-xs text-indigo-600 hover:text-indigo-800 flex items-center gap-1">
                                 <i class="fa-solid fa-pen"></i> {{editingWorkField === 'world_setting' ? '取消' : '编辑'}}
                             </button>
                         </div>
                         <div v-if="editingWorkField === 'world_setting'" class="space-y-2">
-                            <textarea v-model="editingWorkValue" rows="4" class="w-full px-3 py-2 border border-indigo-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-none"></textarea>
+                            <textarea v-model="editingWorkValue" rows="5" class="w-full px-3 py-2 border border-indigo-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-none"></textarea>
                             <div class="flex justify-end gap-2">
                                 <button @click="cancelWorkEdit" class="px-3 py-1 text-xs text-gray-500 hover:text-gray-700">取消</button>
                                 <button @click="saveWorkEdit('world_setting')" class="px-3 py-1 text-xs bg-indigo-600 text-white rounded-lg hover:bg-indigo-700">保存</button>
                             </div>
                         </div>
-                        <p v-else class="text-sm text-indigo-700 whitespace-pre-wrap">{{selectedWork?.world_setting || '暂无世界观设定'}}</p>
+                        <p v-else class="text-sm text-indigo-700 whitespace-pre-wrap leading-relaxed">{{selectedWork?.world_setting || '暂无世界观设定'}}</p>
                     </div>
-                    <!-- Outline -->
-                    <div class="mb-4 p-4 bg-purple-50 rounded-xl">
-                        <div class="flex items-center justify-between mb-2">
+
+                    <!-- 故事大纲 → 时间线 -->
+                    <div class="p-4 bg-gradient-to-br from-purple-50 to-violet-50 rounded-xl border border-purple-100">
+                        <div class="flex items-center justify-between mb-3">
                             <h3 class="font-medium text-purple-800 flex items-center gap-2">
                                 <i class="fa-solid fa-list"></i>故事大纲
+                                <span class="text-xs text-purple-400 font-normal">（按时间线排列的剧情脉络）</span>
                             </h3>
                             <button @click="toggleWorkEdit('outline')" class="text-xs text-purple-600 hover:text-purple-800 flex items-center gap-1">
                                 <i class="fa-solid fa-pen"></i> {{editingWorkField === 'outline' ? '取消' : '编辑'}}
                             </button>
                         </div>
                         <div v-if="editingWorkField === 'outline'" class="space-y-2">
-                            <textarea v-model="editingWorkValue" rows="4" class="w-full px-3 py-2 border border-purple-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 resize-none"></textarea>
+                            <textarea v-model="editingWorkValue" rows="5" class="w-full px-3 py-2 border border-purple-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 resize-none"
+                                placeholder="建议按时间线结构编写，例如：&#10;【开场】主角在村庄平静生活...&#10;【发展】主角发现世界面临危机...&#10;【转折】主角遭遇重大失败...&#10;【高潮】最终决战...&#10;【结局】世界重归和平..."></textarea>
                             <div class="flex justify-end gap-2">
                                 <button @click="cancelWorkEdit" class="px-3 py-1 text-xs text-gray-500 hover:text-gray-700">取消</button>
                                 <button @click="saveWorkEdit('outline')" class="px-3 py-1 text-xs bg-purple-600 text-white rounded-lg hover:bg-purple-700">保存</button>
                             </div>
                         </div>
-                        <p v-else class="text-sm text-purple-700 whitespace-pre-wrap">{{selectedWork?.outline || '暂无故事大纲'}}</p>
+                        <div v-else>
+                            <!-- 时间线显示 -->
+                            <div v-if="outlineStages.length > 0" class="relative">
+                                <!-- 时间线连线 -->
+                                <div class="absolute left-[11px] top-3 bottom-3 w-0.5 bg-purple-200"></div>
+                                <div class="space-y-4">
+                                    <div v-for="(stage, si) in outlineStages" :key="si" class="relative pl-8">
+                                        <!-- 时间节点圆点 -->
+                                        <div class="absolute left-1.5 top-1.5 w-[17px] h-[17px] rounded-full border-2 flex items-center justify-center"
+                                            :class="stage.completed ? 'bg-green-400 border-green-500' : 'bg-white border-purple-300'">
+                                            <i v-if="stage.completed" class="fa-solid fa-check text-white text-[8px]"></i>
+                                        </div>
+                                        <!-- 内容 -->
+                                        <div class="p-3 rounded-lg border"
+                                            :class="stage.completed ? 'bg-green-50 border-green-200' : 'bg-white border-purple-100'">
+                                            <div class="flex items-center gap-2 mb-1">
+                                                <span class="text-xs font-bold px-1.5 py-0.5 rounded"
+                                                    :class="stage.completed ? 'bg-green-200 text-green-800' : 'bg-purple-200 text-purple-800'">
+                                                    {{stage.label}}
+                                                </span>
+                                                <span v-if="stage.completed" class="text-xs text-green-600"><i class="fa-solid fa-check mr-0.5"></i>已完成</span>
+                                                <span v-else class="text-xs text-purple-400">待创作</span>
+                                            </div>
+                                            <p class="text-sm text-gray-700 whitespace-pre-wrap">{{stage.content}}</p>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            <p v-else class="text-sm text-purple-700 whitespace-pre-wrap leading-relaxed">{{selectedWork?.outline || '暂无故事大纲'}}</p>
+                            <p v-if="selectedWork?.outline && outlineStages.length === 0" class="text-xs text-purple-400 mt-2">提示：使用【标签】格式可在大纲中标记不同章节阶段（如：【开场】【发展】【高潮】【结局】）</p>
+                        </div>
                     </div>
+
+                    <!-- 卷大纲列表 -->
+                    <div v-if="selectedWork?.volumes?.length > 0" class="p-4 bg-gradient-to-br from-indigo-50 to-sky-50 rounded-xl border border-indigo-100">
+                        <h3 class="font-medium text-indigo-800 flex items-center gap-2 mb-3">
+                            <i class="fa-solid fa-book-open"></i>卷大纲详情
+                            <span class="text-xs text-indigo-400 font-normal">（各卷独立设定）</span>
+                        </h3>
+                        <div class="space-y-2">
+                            <div v-for="(v, vi) in selectedWork.volumes" :key="v.id"
+                                class="p-3 bg-white rounded-lg border border-indigo-100">
+                                <div class="flex items-center justify-between mb-1">
+                                    <span class="text-sm font-semibold text-indigo-800">{{v.title || '未命名卷'}}</span>
+                                    <span v-if="v.chapter_ids?.length" class="text-xs text-indigo-400">{{v.chapter_ids.length}} 章</span>
+                                </div>
+                                <p class="text-xs text-indigo-700 whitespace-pre-wrap leading-relaxed">{{v.outline || '暂无卷大纲'}}</p>
+                                <div v-if="v.characters?.length" class="flex flex-wrap gap-1 mt-1.5">
+                                    <span v-for="vc in v.characters" :key="vc.name" class="px-1.5 py-0.5 text-xs bg-indigo-100 text-indigo-600 rounded-full">{{vc.name}}</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
                     <!-- Summary -->
-                    <div v-if="selectedWork?.summary" class="mb-4 p-4 bg-green-50 rounded-xl">
+                    <div v-if="selectedWork?.summary" class="p-4 bg-gradient-to-br from-green-50 to-emerald-50 rounded-xl border border-green-100">
                         <h3 class="font-medium text-green-800 mb-2"><i class="fa-solid fa-file-lines mr-1"></i>内容概要</h3>
-                        <p class="text-sm text-green-700 whitespace-pre-wrap">{{selectedWork.summary}}</p>
+                        <p class="text-sm text-green-700 whitespace-pre-wrap leading-relaxed">{{selectedWork.summary}}</p>
                     </div>
                     <!-- Characters -->
                     <div class="mb-4 p-4 bg-pink-50 rounded-xl">
@@ -806,13 +896,16 @@
                                     <div class="flex-1">
                                         <div class="flex items-center gap-2 mb-1">
                                             <span class="font-medium text-pink-900">{{char.name}}</span>
-                                            <span v-if="char.identity" class="text-xs text-pink-600">{{char.identity}}</span>
+                                            <span v-if="char.age" class="text-xs text-pink-400">({{char.age}})</span>
+                                            <span v-if="char.identity" class="text-xs px-1.5 py-0.5 bg-pink-100 text-pink-600 rounded">{{char.identity}}</span>
                                         </div>
                                         <p v-if="char.brief" class="text-xs text-pink-700 mb-1">{{char.brief}}</p>
                                         <div class="flex flex-wrap gap-2">
                                             <span v-if="char.personality" class="text-xs px-2 py-0.5 bg-pink-100 text-pink-600 rounded">{{char.personality}}</span>
                                             <span v-if="char.motivation" class="text-xs px-2 py-0.5 bg-indigo-100 text-indigo-600 rounded">动机: {{char.motivation}}</span>
+                                            <span v-if="char.appearance" class="text-xs px-2 py-0.5 bg-amber-100 text-amber-600 rounded">{{char.appearance}}</span>
                                         </div>
+                                        <p v-if="char.background" class="text-xs text-gray-500 mt-1 line-clamp-2">{{char.background}}</p>
                                     </div>
                                     <div class="flex gap-1 ml-3">
                                         <button @click="editWorkCharacter(idx)" class="p-1.5 hover:bg-pink-100 rounded text-pink-500" title="编辑">
@@ -893,6 +986,7 @@
                                             <button @click="continueFromChapter(selectedWork, ch)" class="px-2.5 py-1 text-xs bg-blue-100 text-blue-700 rounded-lg hover:bg-blue-200 transition">
                                                 <i class="fa-solid fa-forward mr-1"></i>续写
                                             </button>
+                                            <button @click="deleteChapterFromWork(selectedWork.id, ch)" class="text-xs text-red-400 hover:text-red-600 ml-2"><i class="fa-solid fa-trash-can"></i></button>
                                         </div>
                                     </div>
                                     <!-- 创作第一章按钮 -->
@@ -945,27 +1039,68 @@
                                             <i class="fa-solid fa-plus mr-1"></i>添加人物
                                         </button>
                                     </div>
+                                    <!-- 章节规划 -->
+                                    <div class="p-3 bg-gradient-to-br from-sky-50 to-cyan-50 rounded-xl border border-sky-200">
+                                        <div class="flex items-center justify-between mb-2">
+                                            <label class="text-xs font-medium text-sky-800 flex items-center gap-1">
+                                                <i class="fa-solid fa-layer-group"></i>章节规划 <span class="text-gray-400 font-normal">（共 {{planChapterSlots(vol).length}} 章）</span>
+                                            </label>
+                                            <div class="flex items-center gap-1">
+                                                <button @click="addPlanChapterSlot(vol)" class="px-2 py-1 text-xs bg-sky-100 text-sky-700 rounded-lg hover:bg-sky-200 transition" title="添加章节">
+                                                    <i class="fa-solid fa-plus mr-0.5"></i>添加
+                                                </button>
+                                                <button @click="removeLastPlanChapterSlot(vol)" class="px-2 py-1 text-xs bg-red-50 text-red-500 rounded-lg hover:bg-red-100 transition" title="移除最后一章">
+                                                    <i class="fa-solid fa-minus mr-0.5"></i>
+                                                </button>
+                                            </div>
+                                        </div>
+                                        <div class="space-y-2">
+                                            <div v-for="(slot, si) in planChapterSlots(vol)" :key="si"
+                                                class="flex items-start gap-2 p-2 bg-white rounded-lg border border-sky-100">
+                                                <span class="text-xs font-bold text-sky-700 w-12 shrink-0 mt-1.5 text-center">第{{si+1}}章</span>
+                                                <div class="flex-1 space-y-1">
+                                                    <input v-model="slot.title" placeholder="章节标题（可选）"
+                                                        class="w-full px-2 py-1 text-xs border border-gray-200 rounded focus:outline-none focus:ring-1 focus:ring-sky-400">
+                                                    <textarea v-model="slot.outline" rows="2" placeholder="本章大纲（可选，留空则自动生成时填充）"
+                                                        class="w-full px-2 py-1 text-xs border border-gray-200 rounded focus:outline-none focus:ring-1 focus:ring-sky-400 resize-none"></textarea>
+                                                </div>
+                                                <button @click="removePlanChapterSlotAt(vol, si)" class="text-red-300 hover:text-red-500 mt-1 px-1" title="移除此章">
+                                                    <i class="fa-solid fa-xmark text-xs"></i>
+                                                </button>
+                                            </div>
+                                        </div>
+                                        <!-- 章节数量控制 -->
+                                        <div class="mt-2 flex items-center gap-2">
+                                            <span class="text-xs text-gray-500">规划章数：</span>
+                                            <input v-model.number="vol._planNumChapters" type="number" min="1" max="50"
+                                                class="w-16 text-xs px-2 py-1 border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-purple-400">
+                                            <button @click="syncPlanChapterSlots(vol)" class="px-2 py-1 text-xs bg-indigo-100 text-indigo-700 rounded-lg hover:bg-indigo-200 transition">
+                                                <i class="fa-solid fa-arrows-rotate mr-0.5"></i>同步
+                                            </button>
+                                            <span class="text-xs text-gray-400">通过「章节数」调整后点击同步</span>
+                                        </div>
+                                    </div>
                                     <!-- 跨章人物出场表 -->
-                                    <div v-if="vol.chapters && vol.chapters.length > 0">
+                                    <div v-if="planChapterSlots(vol).length > 0">
                                         <div class="flex items-center justify-between mb-1.5">
                                             <label class="block text-xs font-medium text-gray-600">跨章人物出场表 <span class="text-gray-400 font-normal">（勾选每章出场角色）</span></label>
                                             <button @click="fillAllChapterCharacters(vol)" class="text-xs px-2 py-1 bg-indigo-100 text-indigo-700 rounded-lg hover:bg-indigo-200 transition" title="将所有角色分配到所有章节">
                                                 <i class="fa-solid fa-fill-drip mr-0.5"></i>一键填充
                                             </button>
                                         </div>
-                                        <div class="space-y-1.5 max-h-64 overflow-y-auto">
-                                            <div v-for="(ch, chi) in vol.chapters" :key="ch.id || chi"
+                                        <div class="space-y-1.5 max-h-72 overflow-y-auto">
+                                            <div v-for="(slot, si) in planChapterSlots(vol)" :key="'chr-' + si"
                                                 class="flex items-start gap-2 px-3 py-2 bg-gray-50 rounded-lg border border-gray-200">
-                                                <span class="text-xs font-medium text-gray-700 w-28 shrink-0 leading-6">第{{vol._globalIdx + chi + 1}}章 {{ch.title || ''}}</span>
+                                                <span class="text-xs font-medium text-gray-700 w-24 shrink-0 leading-6 truncate">{{slot.title || `第${si+1}章`}}</span>
                                                 <div class="flex flex-wrap gap-1.5 flex-1">
                                                     <template v-if="vol._planCharacterNames && vol._planCharacterNames.length">
                                                         <label v-for="cname in vol._planCharacterNames" :key="cname"
                                                             class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs cursor-pointer select-none transition"
-                                                            :class="getChapterCharStatus(vol, chi, cname)">
-                                                            <input type="checkbox" :checked="isCharInChapter(vol, chi, cname)"
-                                                                @change="toggleChapterChar(vol, chi, cname)" class="sr-only">
+                                                            :class="getChapterCharStatus(vol, si, cname)">
+                                                            <input type="checkbox" :checked="isCharInChapter(vol, si, cname)"
+                                                                @change="toggleChapterChar(vol, si, cname)" class="sr-only">
                                                             {{cname}}
-                                                            <span v-if="isFirstChapterChar(vol, chi, cname)" class="text-yellow-500" title="首次登场">★</span>
+                                                            <span v-if="isFirstChapterChar(vol, si, cname)" class="text-yellow-500" title="首次登场">★</span>
                                                         </label>
                                                     </template>
                                                     <span v-else class="text-xs text-gray-400 italic">请先在"本卷出场人物"中添加角色</span>
@@ -978,9 +1113,6 @@
                                                 <i class="fa-solid fa-triangle-exclamation mt-0.5 shrink-0"></i>{{w}}
                                             </p>
                                         </div>
-                                    </div>
-                                    <div v-else class="px-3 py-2 bg-gray-50 rounded-lg border border-dashed border-gray-200 text-center">
-                                        <span class="text-xs text-gray-400">暂无章节，创作章节后可在出场表中分配角色</span>
                                     </div>
                                     <!-- 本卷伏笔 -->
                                     <div>
@@ -995,14 +1127,49 @@
                                             </button>
                                         </div>
                                     </div>
+                                    <!-- AI生成的章节大纲预览 -->
+                                    <div v-if="vol._planChapters && vol._planChapters.length > 0" class="p-3 bg-cyan-50 border border-cyan-200 rounded-xl">
+                                        <label class="block text-xs font-medium text-cyan-700 mb-2 flex items-center gap-1">
+                                            <i class="fa-solid fa-list-tree"></i>章节大纲计划（AI生成）
+                                        </label>
+                                        <div class="space-y-2">
+                                            <div v-for="(pc, pci) in vol._planChapters" :key="pci" class="p-2 bg-white rounded-lg border border-cyan-100">
+                                                <div class="flex items-center justify-between">
+                                                    <span class="text-xs font-semibold text-cyan-800">第{{pci+1}}章：{{pc.title || ''}}</span>
+                                                    <button @click="fillChapterOutline(vol, pci)" class="text-xs text-cyan-600 hover:text-cyan-800 px-1" title="填充到创作页">
+                                                        <i class="fa-solid fa-arrow-right-to-bracket"></i>
+                                                    </button>
+                                                </div>
+                                                <p v-if="pc.outline" class="text-xs text-gray-600 mt-0.5">{{pc.outline}}</p>
+                                                <div v-if="pc.key_events && pc.key_events.length > 0" class="flex flex-wrap gap-1 mt-1">
+                                                    <span v-for="(ke, kei) in pc.key_events" :key="kei" class="px-1.5 py-0.5 text-xs bg-cyan-100 text-cyan-700 rounded">{{ke}}</span>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
                                     <!-- 保存按钮 -->
                                     <div class="flex items-center justify-between pt-2 border-t border-gray-100">
-                                        <button @click="vol._planOpen = false" class="px-3 py-1.5 text-xs text-gray-500 hover:text-gray-700 transition">完成查看</button>
-                                        <button @click="saveVolumePlan(selectedWork?.id, vol)" :disabled="vol._savingPlan"
-                                            class="px-4 py-2 text-xs bg-gradient-to-r from-purple-500 to-indigo-500 text-white rounded-xl hover:from-purple-600 hover:to-indigo-600 transition disabled:opacity-50 flex items-center gap-1">
-                                            <i :class="vol._savingPlan ? 'fa-solid fa-spinner animate-spin' : 'fa-solid fa-floppy-disk'"></i>
-                                            {{ vol._savingPlan ? '保存中...' : '保存规划' }}
-                                        </button>
+                                        <div class="flex items-center gap-2">
+                                            <input v-model.number="vol._planNumChapters" type="number" min="1" max="50"
+                                                class="w-16 text-xs px-2 py-1 border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-purple-400"
+                                                placeholder="章数" title="规划章节数">
+                                            <input v-model="vol._aiPlanTips" 
+                                                class="w-40 text-xs px-2 py-1 border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-purple-400"
+                                                placeholder="AI辅助要求（可选，如：侧重动作冒险）">
+                                            <button @click="aiVolumePlan(selectedWork, vol)" :disabled="vol._aiPlanning"
+                                                class="px-3 py-1.5 text-xs bg-gradient-to-r from-cyan-500 to-blue-500 text-white rounded-xl hover:from-cyan-600 hover:to-blue-600 transition disabled:opacity-50 flex items-center gap-1">
+                                                <i :class="vol._aiPlanning ? 'fa-solid fa-spinner animate-spin' : 'fa-solid fa-wand-magic-sparkles'"></i>
+                                                {{ vol._aiPlanning ? '生成中...' : 'AI辅助' }}
+                                            </button>
+                                        </div>
+                                        <div class="flex items-center gap-2">
+                                            <button @click="vol._planOpen = false" class="px-3 py-1.5 text-xs text-gray-500 hover:text-gray-700 transition">完成查看</button>
+                                            <button @click="saveVolumePlan(selectedWork?.id, vol)" :disabled="vol._savingPlan"
+                                                class="px-4 py-2 text-xs bg-gradient-to-r from-purple-500 to-indigo-500 text-white rounded-xl hover:from-purple-600 hover:to-indigo-600 transition disabled:opacity-50 flex items-center gap-1">
+                                                <i :class="vol._savingPlan ? 'fa-solid fa-spinner animate-spin' : 'fa-solid fa-floppy-disk'"></i>
+                                                {{ vol._savingPlan ? '保存中...' : '保存规划' }}
+                                            </button>
+                                        </div>
                                     </div>
                                 </div>
                             </div>
@@ -1038,12 +1205,69 @@
             </div>
         </div>
 
+        <!-- Work Character Modal -->
+        <div v-if="showWorkCharModal" class="fixed inset-0 z-[90] flex items-center justify-center p-4" @click.self="showWorkCharModal = false">
+            <div class="fixed inset-0 bg-black/50"></div>
+            <div class="relative bg-white rounded-2xl shadow-xl w-full max-w-lg max-h-[90vh] flex flex-col z-10">
+                <div class="p-4 border-b flex items-center justify-between">
+                    <h3 class="font-semibold flex items-center gap-2"><i class="fa-solid fa-user-plus text-pink-500"></i>{{workCharEditingIdx >= 0 ? '编辑角色' : '添加角色'}}</h3>
+                    <button @click="showWorkCharModal = false" class="text-gray-400 hover:text-gray-600"><i class="fa-solid fa-xmark text-xl"></i></button>
+                </div>
+                <div class="p-5 overflow-y-auto space-y-4">
+                    <div class="grid grid-cols-2 gap-3">
+                        <div>
+                            <label class="block text-xs text-gray-500 mb-1">角色名称 <span class="text-red-400">*</span></label>
+                            <input v-model="workCharForm.name" type="text" placeholder="例：艾琳" class="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-pink-500">
+                        </div>
+                        <div>
+                            <label class="block text-xs text-gray-500 mb-1">年龄</label>
+                            <input v-model="workCharForm.age" type="text" placeholder="例：18岁" class="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-pink-500">
+                        </div>
+                    </div>
+                    <div>
+                        <label class="block text-xs text-gray-500 mb-1">身份/职业</label>
+                        <input v-model="workCharForm.identity" type="text" placeholder="例：勇者、牧师、魔王" class="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-pink-500">
+                    </div>
+                    <div>
+                        <label class="block text-xs text-gray-500 mb-1">外貌特征</label>
+                        <input v-model="workCharForm.appearance" type="text" placeholder="例：金色长发，蓝色眼睛" class="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-pink-500">
+                    </div>
+                    <div>
+                        <label class="block text-xs text-gray-500 mb-1">性格特点</label>
+                        <textarea v-model="workCharForm.personality" rows="2" placeholder="例：勇敢果断，但有时过于冲动" class="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-pink-500 resize-none"></textarea>
+                    </div>
+                    <div>
+                        <label class="block text-xs text-gray-500 mb-1">背景故事</label>
+                        <textarea v-model="workCharForm.background" rows="2" placeholder="例：从小在边境村庄长大..." class="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-pink-500 resize-none"></textarea>
+                    </div>
+                    <div>
+                        <label class="block text-xs text-gray-500 mb-1">核心动机</label>
+                        <input v-model="workCharForm.motivation" type="text" placeholder="例：拯救被魔王抓走的家人" class="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-pink-500">
+                    </div>
+                    <div>
+                        <label class="block text-xs text-gray-500 mb-1">一句话简介</label>
+                        <input v-model="workCharForm.brief" type="text" placeholder="例：背负着拯救王国重任的年轻勇者" class="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-pink-500">
+                    </div>
+                </div>
+                <div class="p-4 border-t flex gap-2 justify-end">
+                    <button @click="showWorkCharModal = false" class="px-4 py-2 border border-gray-200 text-gray-600 rounded-xl hover:bg-gray-50 transition text-sm">取消</button>
+                    <button @click="saveWorkCharacter" class="px-4 py-2 bg-gradient-to-r from-pink-500 to-rose-500 text-white rounded-xl hover:from-pink-600 hover:to-rose-600 transition text-sm">
+                        <i class="fa-solid fa-check mr-1"></i>保存
+                    </button>
+                </div>
+            </div>
+        </div>
+
         <!-- Inspiration Modal -->
         <div v-if="showInspiration" class="fixed inset-0 z-[90] flex items-center justify-center p-4" @click.self="showInspiration = false">
             <div class="fixed inset-0 bg-black/50"></div>
             <div class="relative bg-white rounded-2xl shadow-2xl w-full max-w-4xl max-h-[90vh] flex flex-col z-10">
                 <div class="p-5 border-b flex items-center justify-between">
-                    <h2 class="text-lg font-bold flex items-center gap-2"><i class="fa-solid fa-lightbulb text-yellow-500"></i>AI 灵感建议</h2>
+                    <h2 class="text-lg font-bold flex items-center gap-2">
+                        <i class="fa-solid fa-lightbulb text-yellow-500"></i>
+                        {{inspirationContext === 'work' ? '作品灵感' : 'AI 创作灵感'}}
+                        <span v-if="inspirationContext === 'work'" class="text-xs bg-purple-100 text-purple-600 px-2 py-0.5 rounded-full">应用于作品</span>
+                    </h2>
                     <button @click="showInspiration = false" class="text-gray-400 hover:text-gray-600"><i class="fa-solid fa-xmark text-xl"></i></button>
                 </div>
                 
@@ -1081,11 +1305,22 @@
                             class="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 resize-none"></textarea>
                         <p class="text-xs text-gray-400 mt-1">AI 将根据这些角色描述生成适配的剧情和对话灵感</p>
                     </div>
+                    <div class="bg-white rounded-lg p-3 border border-gray-200">
+                        <label class="text-xs text-gray-500 mb-1 block">创意要求/建议 <span class="text-gray-400 font-normal">（可选，填写后 AI 会参考你的要求生成）</span></label>
+                        <textarea v-model="inspireRequest" rows="2" 
+                            placeholder="示例：希望剧情偏向悬疑风格；角色对话要简洁有力；伏笔要埋得深一些..."
+                            class="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 resize-none"></textarea>
+                    </div>
                     <div class="mt-3 flex gap-2">
-                        <button @click="getInspiration" :disabled="isInspiring"
-                            class="px-4 py-2 bg-gradient-to-r from-purple-500 to-indigo-500 text-white rounded-xl hover:from-purple-600 hover:to-indigo-600 transition disabled:opacity-50 text-sm flex items-center gap-2">
-                            <i :class="isInspiring ? 'fa-solid fa-spinner animate-spin' : 'fa-solid fa-magic'"></i>
-                            {{isInspiring ? '生成中...' : '重新生成'}}
+                        <button v-if="!isInspiring" @click="inspirationContext === 'work' ? generateWorkInspiration() : getInspiration()"
+                            class="px-5 py-2 bg-gradient-to-r from-purple-500 to-indigo-500 text-white rounded-xl hover:from-purple-600 hover:to-indigo-600 transition text-sm flex items-center gap-2 shadow-md">
+                            <i class="fa-solid fa-magic"></i>
+                            生成灵感
+                        </button>
+                        <button v-else disabled
+                            class="px-5 py-2 bg-gradient-to-r from-purple-500 to-indigo-500 text-white rounded-xl opacity-50 cursor-not-allowed text-sm flex items-center gap-2">
+                            <i class="fa-solid fa-spinner animate-spin"></i>
+                            生成中...
                         </button>
                         <button @click="clearInspiration" 
                             class="px-4 py-2 border border-gray-200 text-gray-600 rounded-xl hover:bg-gray-50 transition text-sm">
@@ -1116,10 +1351,10 @@
                             <div class="flex items-center justify-between mb-3">
                                 <h3 class="font-semibold text-gray-800 flex items-center gap-2">
                                     <i class="fa-solid fa-map text-purple-500"></i>剧情发展
-                                    <span class="text-xs text-gray-400 font-normal">点击应用</span>
+                                    <span class="text-xs text-gray-400 font-normal">{{inspirationContext === 'work' ? '点击应用到大纲' : '点击应用'}}</span>
                                 </h3>
                                 <button @click="refreshSingleType('plot_points')" class="text-xs text-purple-500 hover:text-purple-600 flex items-center gap-1">
-                                    <i class="fa-solid fa-rotate-right"></i> 刷新
+                                    <i class="fa-solid fa-rotate-right"></i> 换一批
                                 </button>
                             </div>
                             <div class="space-y-3">
@@ -1150,10 +1385,10 @@
                             <div class="flex items-center justify-between mb-3">
                                 <h3 class="font-semibold text-gray-800 flex items-center gap-2">
                                     <i class="fa-solid fa-users text-pink-500"></i>角色灵感
-                                    <span class="text-xs text-gray-400 font-normal">点击应用</span>
+                                    <span class="text-xs text-gray-400 font-normal">{{inspirationContext === 'work' ? '点击添加到作品' : '点击应用'}}</span>
                                 </h3>
                                 <button @click="refreshSingleType('characters')" class="text-xs text-pink-500 hover:text-pink-600 flex items-center gap-1">
-                                    <i class="fa-solid fa-rotate-right"></i> 刷新
+                                    <i class="fa-solid fa-rotate-right"></i> 换一批
                                 </button>
                             </div>
                             <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -1186,10 +1421,10 @@
                             <div class="flex items-center justify-between mb-3">
                                 <h3 class="font-semibold text-gray-800 flex items-center gap-2">
                                     <i class="fa-solid fa-eye text-yellow-500"></i>伏笔建议
-                                    <span class="text-xs text-gray-400 font-normal">点击应用</span>
+                                    <span class="text-xs text-gray-400 font-normal">{{inspirationContext === 'work' ? '点击添加到作品' : '点击应用'}}</span>
                                 </h3>
                                 <button @click="refreshSingleType('foreshadowings')" class="text-xs text-yellow-600 hover:text-yellow-700 flex items-center gap-1">
-                                    <i class="fa-solid fa-rotate-right"></i> 刷新
+                                    <i class="fa-solid fa-rotate-right"></i> 换一批
                                 </button>
                             </div>
                             <div class="flex flex-wrap gap-3">
@@ -1218,10 +1453,10 @@
                             <div class="flex items-center justify-between mb-3">
                                 <h3 class="font-semibold text-gray-800 flex items-center gap-2">
                                     <i class="fa-solid fa-globe text-blue-500"></i>世界观设定
-                                    <span class="text-xs text-gray-400 font-normal">点击应用</span>
+                                    <span class="text-xs text-gray-400 font-normal">{{inspirationContext === 'work' ? '点击应用到作品' : '点击应用'}}</span>
                                 </h3>
                                 <button @click="refreshSingleType('world_building')" class="text-xs text-blue-500 hover:text-blue-600 flex items-center gap-1">
-                                    <i class="fa-solid fa-rotate-right"></i> 刷新
+                                    <i class="fa-solid fa-rotate-right"></i> 换一批
                                 </button>
                             </div>
                             <div class="space-y-3">
@@ -1255,7 +1490,7 @@
                                     <span class="text-xs text-gray-400 font-normal">点击应用</span>
                                 </h3>
                                 <button @click="refreshSingleType('titles')" class="text-xs text-green-500 hover:text-green-600 flex items-center gap-1">
-                                    <i class="fa-solid fa-rotate-right"></i> 刷新
+                                    <i class="fa-solid fa-rotate-right"></i> 换一批
                                 </button>
                             </div>
                             <div class="flex flex-wrap gap-3">
@@ -1287,7 +1522,7 @@
                                     <span class="text-xs text-gray-400 font-normal">点击应用</span>
                                 </h3>
                                 <button @click="refreshSingleType('scenes')" class="text-xs text-orange-500 hover:text-orange-600 flex items-center gap-1">
-                                    <i class="fa-solid fa-rotate-right"></i> 刷新
+                                    <i class="fa-solid fa-rotate-right"></i> 换一批
                                 </button>
                             </div>
                             <div class="space-y-3">
@@ -1322,7 +1557,7 @@
                                     <span class="text-xs text-gray-400 font-normal">点击应用</span>
                                 </h3>
                                 <button @click="refreshSingleType('dialogues')" class="text-xs text-cyan-500 hover:text-cyan-600 flex items-center gap-1">
-                                    <i class="fa-solid fa-rotate-right"></i> 刷新
+                                    <i class="fa-solid fa-rotate-right"></i> 换一批
                                 </button>
                             </div>
                             <div class="space-y-3">
@@ -1529,6 +1764,48 @@
                 const editingWorkField = ref('')
                 const editingWorkValue = ref('')
                 const editingCharIndex = ref(-1)
+                const showWorkCharModal = ref(false)
+                const workCharForm = ref({ name: '', age: '', identity: '', appearance: '', personality: '', background: '', motivation: '', brief: '', relationships: [] })
+                const workCharEditingIdx = ref(-1)
+
+                // 作品进度计算（基于大纲阶段数与已写章节）
+                const workProgress = computed(() => {
+                    const work = selectedWork.value
+                    if (!work) return { total: 0, completed: 0, pending: 0, percent: 0 }
+                    // 解析大纲阶段数
+                    const outline = work.outline || ''
+                    const stagePattern = /【([^】]+)】/g
+                    const stageMatches = outline.match(stagePattern)
+                    const stageCount = stageMatches ? stageMatches.length : 1
+                    const total = Math.max(stageCount, 1)
+                    const completed = Math.min((selectedWorkChapters.value || []).length, total)
+                    const pending = Math.max(0, total - completed)
+                    const percent = Math.min(100, Math.round((completed / total) * 100))
+                    return { total, completed, pending, percent }
+                })
+                // 大纲→时间线解析：将带【标签】的文本解析为时间线阶段
+                const outlineStages = computed(() => {
+                    const outline = selectedWork.value?.outline || ''
+                    if (!outline) return []
+                    const stagePattern = /【([^】]+)】([\s\S]*?)(?=【[^】]+】|$)/g
+                    const stages = []
+                    let match
+                    while ((match = stagePattern.exec(outline)) !== null) {
+                        const label = match[1].trim()
+                        const content = match[2].trim()
+                        if (content) {
+                            stages.push({ label, content, completed: false })
+                        }
+                    }
+                    if (stages.length === 0) return []
+                    // 按实际已写章节数标记完成状态：前 N 个阶段为已完成
+                    const completedChapters = (selectedWorkChapters.value || []).length
+                    for (let i = 0; i < stages.length; i++) {
+                        stages[i].completed = i < completedChapters
+                    }
+                    return stages
+                })
+
                 const isInspiring = ref(false)
                 const showInspiration = ref(false)
                 const inspireData = ref(null)
@@ -1546,6 +1823,8 @@
                 const inspireCount = ref(3)
                 const inspireTemperature = ref(0.8)
                 const inspireCharacters = ref('')
+                const inspireRequest = ref('')
+                const inspirationContext = ref('creation') // 'creation' | 'work'
                 const selectedInspireTypeLabels = computed(() => {
                     return selectedInspireTypes.value.map(t => {
                         const o = inspireTypeOptions.find(op => op.value === t)
@@ -1555,6 +1834,70 @@
 
                 // Volume UI state (decoupled from computed to persist across re-computations)
                 const volumeUiState = reactive({})
+                // 将AI规划的章节大纲填充到创作页
+                function fillChapterOutline(vol, idx) {
+                    const pc = vol._planChapters?.[idx]
+                    if (!pc) return
+                    const work = selectedWork.value
+                    if (!work) return
+                    // 直接跳转到创作页并填充本章大纲
+                    storyForm.theme = work.title
+                    storyForm.genre = work.genre || ''
+                    storyForm.style = work.style || ''
+                    storyForm.perspective = work.perspective || ''
+                    storyForm.conflict = work.conflict || ''
+                    storyForm.mood = work.mood || ''
+                    storyForm.world_setting = work.world_setting
+                    storyForm.outline = pc.outline || ''
+                    storyForm.work_id = work.id
+                    storyForm.volume_id = vol.id
+                    storyForm.chapter_number = idx + 1
+                    showWorkDetail.value = false
+                    currentTab.value = 'create'
+                    // 清空已有内容
+                    storyContent.value = ''
+                    currentTitle.value = pc.title || `第${idx+1}章`
+                    showToast(`已填充「${pc.title || '第'+(idx+1)+'章'}」大纲`, 'success')
+                }
+
+                // === 章节规划（planning tab） ===
+                function planChapterSlots(vol) {
+                    return vol._planChapterSlots || []
+                }
+                function addPlanChapterSlot(vol) {
+                    const ui = getVolUi(vol.id)
+                    ui.planChapterSlots.push({ title: '', outline: '' })
+                }
+                function removeLastPlanChapterSlot(vol) {
+                    const ui = volumeUiState[vol.id]
+                    if (!ui) return
+                    ui.planChapterSlots.pop()
+                    // 清理对应的角色映射
+                    const idx = ui.planChapterSlots.length
+                    delete ui.planChapterCharMap[idx]
+                }
+                function removePlanChapterSlotAt(vol, idx) {
+                    const ui = volumeUiState[vol.id]
+                    if (!ui) return
+                    ui.planChapterSlots.splice(idx, 1)
+                    // 清理该章及之后的角色映射
+                    for (let i = idx; i <= ui.planChapterSlots.length; i++) {
+                        delete ui.planChapterCharMap[i]
+                    }
+                }
+                function syncPlanChapterSlots(vol) {
+                    const ui = volumeUiState[vol.id]
+                    if (!ui) return
+                    const target = Math.max(1, vol._planNumChapters || 1)
+                    while (ui.planChapterSlots.length < target) {
+                        ui.planChapterSlots.push({ title: '', outline: '' })
+                    }
+                    while (ui.planChapterSlots.length > target) {
+                        ui.planChapterSlots.pop()
+                        delete ui.planChapterCharMap[ui.planChapterSlots.length]
+                    }
+                }
+
                 function getVolUi(volId, volData) {
                     if (!volumeUiState[volId]) volumeUiState[volId] = {
                         open: true, renaming: false, newTitle: '',
@@ -1565,10 +1908,15 @@
                         planConnNext: volData?.connection_to_next || '',
                         planCharacters: (volData?.characters || []).map(c => ({...c})),
                         planForeshadowings: [...(volData?.foreshadowings || [])],
-                        // 跨章人物出场表
+                        planChapterSlots: (volData?.chapter_outlines || []).map(co => ({title: co.title || '', outline: co.outline || ''})),
+                        // 备选：从 planChapters 中恢复
                         planChapterCharMap: {},  // {chapter_index: [character_names]}
+                        planChapters: [],
                         planCharWarnings: [],
-                        savingPlan: false
+                        savingPlan: false,
+                        aiPlanTips: '',
+                        aiPlanning: false,
+                        planNumChapters: volData?.chapter_ids ? volData.chapter_ids.length : 1
                     }
                     return volumeUiState[volId]
                 }
@@ -1588,6 +1936,78 @@
                     ui.newTitle = ''
                 }
 
+                // AI辅助卷规划
+                async function aiVolumePlan(work, vol) {
+                    if (!work || !vol) return
+                    if (!apiKey.value) {
+                        showToast('请先在设置中配置 API Key', 'warning')
+                        return
+                    }
+                    const ui = volumeUiState[vol.id]
+                    if (!ui) return
+                    // 同步规划章节数
+                    const numChapters = vol._planNumChapters || ui.planNumChapters || 1
+                    ui.planNumChapters = numChapters
+                    ui.aiPlanning = true
+                    try {
+                        const r = await fetch(`/api/v1/works/${work.id}/volumes/${vol.id}/ai-plan`, {
+                            method: 'POST',
+                            headers: {'Content-Type': 'application/json'},
+                            body: JSON.stringify({
+                                api_key: apiKey.value,
+                                tips: ui.aiPlanTips || '',
+                                num_chapters: numChapters
+                            })
+                        })
+                        const result = await r.json()
+                        if (result.success) {
+                            const d = result.data
+                            if (d.responsibility) ui.planResponsibility = d.responsibility
+                            if (d.outline) ui.planOutline = d.outline
+                            if (d.connection_to_prev) ui.planConnPrev = d.connection_to_prev
+                            if (d.connection_to_next) ui.planConnNext = d.connection_to_next
+                            if (d.characters) {
+                                ui.planCharacters = d.characters.map(c => ({
+                                    name: c.name || c.role || '',
+                                    identity: c.identity || '',
+                                    brief: c.brief || ''
+                                }))
+                            }
+                            if (d.foreshadowings) {
+                                ui.planForeshadowings = d.foreshadowings.map(f => {
+                                    if (typeof f === 'object' && f !== null) return f.item || f.foreshadowing || f.purpose || JSON.stringify(f)
+                                    return String(f || '')
+                                })
+                            }
+                            if (d.chapters && d.chapters.length > 0) {
+                                ui.planChapters = d.chapters
+                                // 同步填充到章节规划 slots
+                                d.chapters.forEach((ch, ci) => {
+                                    if (ci < ui.planChapterSlots.length) {
+                                        if (ch.title) ui.planChapterSlots[ci].title = ch.title
+                                        if (ch.outline) ui.planChapterSlots[ci].outline = ch.outline
+                                    } else {
+                                        ui.planChapterSlots.push({ title: ch.title || '', outline: ch.outline || '' })
+                                    }
+                                })
+                                // 同时填充到 volume 的 chapter_outlines，供保存使用
+                                vol.chapter_outlines = d.chapters.map(ch => ({
+                                    id: 'plan_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5),
+                                    title: ch.title || '',
+                                    outline: ch.outline || '',
+                                    key_events: ch.key_events || []
+                                }))
+                            }
+                            showToast('AI规划已生成，点击保存确认', 'success')
+                        } else {
+                            showToast('AI规划失败: ' + (result.error || '未知错误'), 'error')
+                        }
+                    } catch (e) {
+                        showToast('网络错误: ' + e.message, 'error')
+                    } finally {
+                        ui.aiPlanning = false
+                    }
+                }
                 async function saveVolumePlan(workId, vol) {
                     if (!workId || !vol) return
                     const ui = volumeUiState[vol.id]
@@ -1595,12 +2015,13 @@
                     ui.savingPlan = true
                     // 保存前运行一次校验
                     validateChapterCharacters(vol.id)
-                    // 构建 chapter_characters 数据
-                    const charChapterList = vol.chapters.map((ch, idx) => {
+                    // 构建 chapter_characters 数据（使用规划章节 slots）
+                    const planSlots = ui.planChapterSlots || []
+                    const charChapterList = planSlots.map((slot, idx) => {
                         const names = ui.planChapterCharMap[idx] || []
                         return {
-                            chapter_num: vol._globalIdx + idx + 1,
-                            title: ch.title || `第${vol._globalIdx + idx + 1}章`,
+                            chapter_num: idx + 1,
+                            title: slot.title || `第${idx + 1}章`,
                             characters: names.filter(n => n && n.trim())
                         }
                     })
@@ -1614,8 +2035,9 @@
                                 connection_to_prev: ui.planConnPrev,
                                 connection_to_next: ui.planConnNext,
                                 characters: ui.planCharacters.filter(c => c.name.trim()),
-                                foreshadowings: ui.planForeshadowings.filter(f => f.trim()),
-                                chapter_characters: charChapterList
+                                foreshadowings: ui.planForeshadowings.map(f => typeof f === 'object' && f !== null ? (f.item || f.foreshadowing || f.purpose || String(f)) : String(f || '')).filter(f => f.trim()),
+                                chapter_characters: charChapterList,
+                                chapter_outlines: ui.planChapterSlots.map(s => ({title: s.title || '', outline: s.outline || ''}))
                             })
                         })
                         const result = await r.json()
@@ -1682,9 +2104,10 @@
                     const ui = volumeUiState[vol.id]
                     if (!ui) return
                     const charNames = ui.planCharacters.filter(pc => pc.name && pc.name.trim()).map(pc => pc.name.trim())
-                    vol.chapters.forEach((ch, idx) => {
+                    const slotCount = planChapterSlots(vol).length
+                    for (let idx = 0; idx < slotCount; idx++) {
                         ui.planChapterCharMap[idx] = [...charNames]
-                    })
+                    }
                     validateChapterCharacters(vol.id)
                 }
                 function validateChapterCharacters(volId) {
@@ -1774,13 +2197,21 @@
                             _planConnNext: ui.planConnNext,
                             _planCharacters: ui.planCharacters,
                             _planForeshadowings: ui.planForeshadowings,
+                            _planChapterSlots: ui.planChapterSlots,
                             _savingPlan: ui.savingPlan,
+                            _aiPlanTips: ui.aiPlanTips,
+                            _aiPlanning: ui.aiPlanning,
+                            _planNumChapters: ui.planNumChapters,
                             _globalIdx: globalIdx,
                             // 跨章人物出场表字段
                             _planChapterCharMap: ui.planChapterCharMap,
                             _planCharacterNames: charNames,
+                            _planChapters: ui.planChapters,
                             _charWarnings: ui.planCharWarnings,
-                            _validateChars: () => validateChapterCharacters(v.id)
+                            _validateChars: () => validateChapterCharacters(v.id),
+                            // 保存的章节角色表（供一键生成使用）
+                            chapter_characters: v.chapter_characters || [],
+                            chapter_outlines: v.chapter_outlines || []
                         }
                         globalIdx += volChapters.length
                         return node
@@ -1977,7 +2408,7 @@
                                         }
 
                                         if (data.agent === 'orchestrator' && data.status === 'complete') {
-                                            currentTitle.value = data.data.title || storyForm.theme
+                                            currentTitle.value = data.data.title || (storyForm.chapter_number ? `第${storyForm.chapter_number}章` : '')
                                             storyContent.value = data.data.content || storyContent.value
                                             generatedOutline.value = data.data.outline || null
                                             generatedCharacters.value = data.data.characters || []
@@ -2003,7 +2434,7 @@
                             headers: { 'Content-Type': 'application/json' },
                             body: JSON.stringify({
                                 id: lastSavedStoryId.value || '',
-                                title: currentTitle.value || storyForm.theme,
+                                title: currentTitle.value || (storyForm.chapter_number ? `第${storyForm.chapter_number}章` : storyForm.theme),
                                 content: storyContent.value,
                                 theme: storyForm.theme,
                                 genre: storyForm.genre,
@@ -2023,7 +2454,7 @@
                             await fetch(`/api/v1/works/${storyForm.work_id}/chapters`, {
                                 method: 'POST',
                                 headers: {'Content-Type': 'application/json'},
-                                body: JSON.stringify({story_id: story_id, volume_id: storyForm.volume_id})
+                                body: JSON.stringify({story_id: story_id, volume_id: storyForm.volume_id, chapter_number: storyForm.chapter_number})
                             })
                         }
                         await loadHistory()
@@ -2037,24 +2468,35 @@
 
                 // 生成后快速续写下一章
                 const lastSavedStoryId = ref('')
+                const lastChapterTitle = ref('')
                 const continueNextChapter = async () => {
-                    // 先保存当前内容（如果没保存过）
-                    if (!lastSavedStoryId.value && storyContent.value.trim()) {
+                    // 先保存当前内容
+                    if (storyContent.value.trim()) {
                         await saveStory(false)
-                    }
-                    if (!lastSavedStoryId.value) {
-                        showToast('请先保存当前章节', 'warning')
+                        if (!lastSavedStoryId.value) {
+                            showToast('保存失败，无法续写', 'warning')
+                            return
+                        }
+                    } else {
+                        showToast('当前章节无内容，请先生成故事', 'warning')
                         return
                     }
-                    // 设好下一章的参数
+                    // 记住上一章标题
+                    lastChapterTitle.value = currentTitle.value || (storyForm.chapter_number ? `第${storyForm.chapter_number}章` : storyForm.theme)
+                    // 计算下一章序号
+                    const nextChapterNum = (storyForm.chapter_number || 0) + 1
+                    // 设置续写参数
                     storyForm.previous_story_id = lastSavedStoryId.value
-                    storyForm.chapter_number = (storyForm.chapter_number || 0) + 1
+                    storyForm.chapter_number = nextChapterNum
                     storyForm.continuation_mode = 'next_chapter'
-                    // 清空当前内容
+                    // 保持故事大纲
+                    storyForm.outline = storyForm.outline || selectedWork.value?.outline || ''
+                    // 自动生成章节标题
+                    currentTitle.value = `第${nextChapterNum}章`
+                    // 清空当前内容准备新章节
                     storyContent.value = ''
-                    currentTitle.value = ''
                     lastSavedStoryId.value = ''
-                    // 滚动到顶部并立即触发生成
+                    showToast(`📖 准备续写第${nextChapterNum}章...`, 'info')
                     window.scrollTo({ top: 0, behavior: 'smooth' })
                     await generateStory()
                 }
@@ -2127,16 +2569,56 @@
                             storyForm.outline = chOutline
                             // 填充本章出场角色
                             const chCharNames = ch.characters || []
+                            const matchedChars = []
+                            // 先从 vol.characters 匹配
                             if (vol.characters && vol.characters.length > 0) {
-                                charactersList.value = vol.characters
+                                vol.characters
                                     .filter(c => chCharNames.includes(c.name))
-                                    .map(c => ({
-                                        name: c.name || '', age: c.age || '',
-                                        identity: c.identity || '', appearance: c.appearance || '',
-                                        personality: c.personality || '', background: c.background || '',
-                                        motivation: c.motivation || '', relationships: c.relationships || [],
-                                        is_template: false
-                                    }))
+                                    .forEach(c => {
+                                        // 如果 vol.characters 中的角色缺少详细信息，从 work.characters 补充
+                                        if ((!c.personality || !c.background || !c.motivation) && work.characters) {
+                                            const fullChar = work.characters.find(wc => wc.name === c.name)
+                                            if (fullChar) {
+                                                matchedChars.push({
+                                                    name: fullChar.name || c.name || '',
+                                                    age: fullChar.age || c.age || '',
+                                                    identity: fullChar.identity || c.identity || '',
+                                                    appearance: fullChar.appearance || c.appearance || '',
+                                                    personality: fullChar.personality || c.personality || '',
+                                                    background: fullChar.background || c.background || '',
+                                                    motivation: fullChar.motivation || c.motivation || '',
+                                                    relationships: [...(fullChar.relationships || []), ...(c.relationships || [])],
+                                                    is_template: false
+                                                })
+                                                return
+                                            }
+                                        }
+                                        matchedChars.push({
+                                            name: c.name || '', age: c.age || '',
+                                            identity: c.identity || '', appearance: c.appearance || '',
+                                            personality: c.personality || '', background: c.background || '',
+                                            motivation: c.motivation || '', relationships: c.relationships || [],
+                                            is_template: false
+                                        })
+                                    })
+                            }
+                            // 从 work.characters 中补充 vol.characters 中缺失的角色
+                            if (work.characters && work.characters.length > 0) {
+                                const matchedNames = new Set(matchedChars.map(c => c.name))
+                                work.characters
+                                    .filter(c => chCharNames.includes(c.name) && !matchedNames.has(c.name))
+                                    .forEach(c => {
+                                        matchedChars.push({
+                                            name: c.name || '', age: c.age || '',
+                                            identity: c.identity || '', appearance: c.appearance || '',
+                                            personality: c.personality || '', background: c.background || '',
+                                            motivation: c.motivation || '', relationships: c.relationships || [],
+                                            is_template: false
+                                        })
+                                    })
+                            }
+                            if (matchedChars.length > 0) {
+                                charactersList.value = matchedChars
                             }
                             // 填充伏笔
                             const volFws = vol.foreshadowings || work.foreshadowings || []
@@ -2177,6 +2659,15 @@
                 }
 
                 // === 灵感功能 ===
+                const openInspiration = () => {
+                    inspirationContext.value = 'creation'
+                    selectedInspireTypes.value = ['plot_points', 'characters', 'foreshadowings']
+                    inspireCharacters.value = ''
+                    inspireRequest.value = ''
+                    inspireData.value = null
+                    inspireError.value = ''
+                    showInspiration.value = true
+                }
                 const getInspiration = async () => {
                     if (!storyForm.theme.trim()) {
                         showToast('请先输入故事主题', 'warning')
@@ -2187,7 +2678,6 @@
                         return
                     }
                     isInspiring.value = true
-                    showInspiration.value = true
                     inspireError.value = ''
                     try {
                         const listCharacters = charactersList.value.map(c => 
@@ -2208,6 +2698,7 @@
                                 existing_outline: storyForm.outline,
                                 existing_foreshadowings: foreshadowings.value,
                                 existing_characters: existingCharacters,
+                                user_request: inspireRequest.value.trim(),
                                 api_key: apiKey.value,
                                 types: selectedInspireTypes.value,
                                 count: inspireCount.value,
@@ -2244,21 +2735,37 @@
                     isInspiring.value = true
                     inspireError.value = ''
                     try {
+                        const body = inspirationContext.value === 'work' ? {
+                            theme: selectedWork.value?.title || storyForm.theme,
+                            world_setting: selectedWork.value?.world_setting || storyForm.world_setting,
+                            genre: selectedWork.value?.genre || storyForm.genre,
+                            style: selectedWork.value?.style || storyForm.style,
+                            existing_outline: selectedWork.value?.outline || storyForm.outline,
+                            existing_foreshadowings: foreshadowings.value,
+                            existing_characters: inspireCharacters.value.trim(),
+                            user_request: inspireRequest.value.trim(),
+                            api_key: apiKey.value,
+                            types: [type],
+                            count: inspireCount.value,
+                            temperature: inspireTemperature.value
+                        } : {
+                            theme: storyForm.theme,
+                            world_setting: storyForm.world_setting,
+                            genre: storyForm.genre,
+                            style: storyForm.style,
+                            existing_outline: storyForm.outline,
+                            existing_foreshadowings: foreshadowings.value,
+                            existing_characters: inspireCharacters.value.trim(),
+                            user_request: inspireRequest.value.trim(),
+                            api_key: apiKey.value,
+                            types: [type],
+                            count: inspireCount.value,
+                            temperature: inspireTemperature.value
+                        }
                         const r = await fetch('/api/v1/story/inspire', {
                             method: 'POST',
                             headers: {'Content-Type': 'application/json'},
-                            body: JSON.stringify({
-                                theme: storyForm.theme,
-                                world_setting: storyForm.world_setting,
-                                genre: storyForm.genre,
-                                style: storyForm.style,
-                                existing_outline: storyForm.outline,
-                                existing_foreshadowings: foreshadowings.value,
-                                api_key: apiKey.value,
-                                types: [type],
-                                count: inspireCount.value,
-                                temperature: inspireTemperature.value
-                            })
+                            body: JSON.stringify(body)
                         })
                         const result = await r.json()
                         if (result.success && result.data) {
@@ -2276,6 +2783,8 @@
                 const clearInspiration = () => {
                     inspireData.value = null
                     inspireError.value = ''
+                    inspireCharacters.value = ''
+                    inspireRequest.value = ''
                 }
 
                 const copyDialogue = (item) => {
@@ -2283,6 +2792,10 @@
                 }
 
                 const applyPlotPoint = (item) => {
+                    if (inspirationContext.value === 'work') {
+                        applyOutlineToWork(item)
+                        return
+                    }
                     const line = `- 【${item.title}】${item.description}`
                     if (storyForm.outline) {
                         storyForm.outline += '\n' + line
@@ -2293,11 +2806,19 @@
                 }
 
                 const applyForeshadowing = (item) => {
+                    if (inspirationContext.value === 'work') {
+                        applyForeshadowingToWork(item)
+                        return
+                    }
                     foreshadowings.value.push(item.content)
                     showToast('已添加到伏笔列表', 'success')
                 }
 
                 const applyCharacter = (item) => {
+                    if (inspirationContext.value === 'work') {
+                        applyCharacterToWork(item)
+                        return
+                    }
                     charactersList.value.push({
                         name: item.name || '',
                         age: item.age || '',
@@ -2313,6 +2834,10 @@
                 }
 
                 const applyWorldBuilding = (item) => {
+                    if (inspirationContext.value === 'work') {
+                        applyWorldToWork(item)
+                        return
+                    }
                     const line = `- ${item.aspect}: ${item.detail}`
                     if (storyForm.world_setting) {
                         storyForm.world_setting += '\n' + line
@@ -2348,6 +2873,86 @@
                         storyForm.outline = line
                     }
                     showToast('已添加到梗概', 'success')
+                }
+
+                // === 作品灵感应用函数 ===
+                async function applyWorldToWork(item) {
+                    if (!selectedWork.value) return
+                    const line = `- ${item.aspect}: ${item.detail}`
+                    let newSetting = selectedWork.value.world_setting || ''
+                    newSetting = newSetting ? newSetting + '\n' + line : line
+                    const r = await fetch(`/api/v1/works/${selectedWork.value.id}`, {
+                        method: 'PUT',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({ world_setting: newSetting })
+                    })
+                    if (r.ok) {
+                        selectedWork.value.world_setting = newSetting
+                        showToast('已应用到作品世界观', 'success')
+                    } else {
+                        showToast('应用失败', 'error')
+                    }
+                }
+
+                async function applyOutlineToWork(item) {
+                    if (!selectedWork.value) return
+                    const line = `- 【${item.title}】${item.description}`
+                    let newOutline = selectedWork.value.outline || ''
+                    newOutline = newOutline ? newOutline + '\n' + line : line
+                    const r = await fetch(`/api/v1/works/${selectedWork.value.id}`, {
+                        method: 'PUT',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({ outline: newOutline })
+                    })
+                    if (r.ok) {
+                        selectedWork.value.outline = newOutline
+                        showToast('已应用到大纲', 'success')
+                    } else {
+                        showToast('应用失败', 'error')
+                    }
+                }
+
+                async function applyCharacterToWork(item) {
+                    if (!selectedWork.value) return
+                    const char = {
+                        name: item.name || '',
+                        age: item.age || '',
+                        identity: item.identity || '',
+                        appearance: item.appearance || '',
+                        personality: item.personality || '',
+                        background: item.background || '',
+                        motivation: item.motivation || '',
+                        brief: item.brief || '',
+                        relationships: []
+                    }
+                    const r = await fetch(`/api/v1/works/${selectedWork.value.id}/characters`, {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify(char)
+                    })
+                    if (r.ok) {
+                        showToast(`已添加角色「${item.name}」到作品`, 'success')
+                        await viewWork(selectedWork.value)
+                    } else {
+                        showToast('添加失败', 'error')
+                    }
+                }
+
+                async function applyForeshadowingToWork(item) {
+                    if (!selectedWork.value) return
+                    const fw = item.content || item
+                    const newFws = [...(selectedWork.value.foreshadowings || []), fw]
+                    const r = await fetch(`/api/v1/works/${selectedWork.value.id}`, {
+                        method: 'PUT',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({ foreshadowings: newFws })
+                    })
+                    if (r.ok) {
+                        selectedWork.value.foreshadowings = newFws
+                        showToast('已添加到作品伏笔', 'success')
+                    } else {
+                        showToast('添加失败', 'error')
+                    }
                 }
 
                 const loadHistory = async (page = 1) => {
@@ -2477,7 +3082,14 @@
                     if (r.ok) {
                         const data = await r.json()
                         selectedWork.value = data.work
-                        selectedWorkChapters.value = data.chapters || []
+                        selectedWorkChapters.value = (data.chapters || []).map(c => {
+                            // 如果标题等于作品名（旧数据缺陷），从正文提取真实标题
+                            if (c.title === data.work?.title && c.content) {
+                                const m = c.content.match(/^#{1,4}\s+(.+)$/m)
+                                if (m) c.title = m[1].trim()
+                            }
+                            return c
+                        })
                         console.log('[TaleForge] viewWork:', data.work?.title)
                         console.log('  work:', JSON.stringify({
                             id: data.work?.id?.slice(0,8),
@@ -2543,41 +3155,43 @@
                 }
 
                 async function addWorkCharacter() {
-                    const name = prompt('输入角色名称：')
-                    if (!name) return
-                    const identity = prompt('输入角色身份：')
-                    const brief = prompt('输入角色简介：')
-                    const r = await fetch(`/api/v1/works/${selectedWork.value.id}/characters`, {
-                        method: 'POST',
-                        headers: {'Content-Type': 'application/json'},
-                        body: JSON.stringify({ name, identity, brief })
-                    })
-                    if (r.ok) {
-                        showToast(`已添加角色「${name}」`, 'success')
-                        await viewWork(selectedWork.value)
-                    } else {
-                        showToast('添加失败', 'error')
-                    }
+                    workCharForm.value = { name: '', age: '', identity: '', appearance: '', personality: '', background: '', motivation: '', brief: '', relationships: [] }
+                    workCharEditingIdx.value = -1
+                    showWorkCharModal.value = true
                 }
 
                 async function editWorkCharacter(idx) {
                     const char = selectedWork.value.characters[idx]
-                    const name = prompt('输入角色名称：', char.name)
-                    if (name === null) return
-                    const identity = prompt('输入角色身份：', char.identity)
-                    const personality = prompt('输入性格特点：', char.personality)
-                    const motivation = prompt('输入核心动机：', char.motivation)
-                    const brief = prompt('输入角色简介：', char.brief)
-                    const r = await fetch(`/api/v1/works/${selectedWork.value.id}/characters/${idx}`, {
-                        method: 'PUT',
-                        headers: {'Content-Type': 'application/json'},
-                        body: JSON.stringify({ name, identity, personality, motivation, brief })
-                    })
+                    workCharForm.value = { 
+                        name: char.name || '', age: char.age || '', identity: char.identity || '', 
+                        appearance: char.appearance || '', personality: char.personality || '', 
+                        background: char.background || '', motivation: char.motivation || '', 
+                        brief: char.brief || '', relationships: char.relationships || []
+                    }
+                    workCharEditingIdx.value = idx
+                    showWorkCharModal.value = true
+                }
+
+                async function saveWorkCharacter() {
+                    const form = workCharForm.value
+                    if (!form.name.trim()) { showToast('请输入角色名称', 'warning'); return }
+                    const body = { name: form.name, age: form.age, identity: form.identity, appearance: form.appearance, personality: form.personality, background: form.background, motivation: form.motivation, brief: form.brief, relationships: form.relationships }
+                    let r
+                    if (workCharEditingIdx.value >= 0) {
+                        r = await fetch(`/api/v1/works/${selectedWork.value.id}/characters/${workCharEditingIdx.value}`, {
+                            method: 'PUT', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)
+                        })
+                    } else {
+                        r = await fetch(`/api/v1/works/${selectedWork.value.id}/characters`, {
+                            method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)
+                        })
+                    }
                     if (r.ok) {
-                        showToast('修改成功', 'success')
+                        showToast(workCharEditingIdx.value >= 0 ? '修改成功' : '添加成功', 'success')
+                        showWorkCharModal.value = false
                         await viewWork(selectedWork.value)
                     } else {
-                        showToast('修改失败', 'error')
+                        showToast('保存失败', 'error')
                     }
                 }
 
@@ -2596,13 +3210,29 @@
                 }
 
                 async function getInspirationFromWork() {
+                    inspirationContext.value = 'work'
+                    selectedInspireTypes.value = ['world_building', 'plot_points', 'characters']
+                    inspireCharacters.value = ''
+                    inspireRequest.value = ''
+                    inspireData.value = null
+                    inspireError.value = ''
                     showInspiration.value = true
+                }
+
+                async function generateWorkInspiration() {
+                    if (!selectedWork.value) return
+                    if (!selectedInspireTypes.value.length) {
+                        showToast('请至少选择一种灵感类型', 'warning')
+                        return
+                    }
                     isInspiring.value = true
                     inspireError.value = ''
                     try {
                         const characters = selectedWork.value.characters.map(c => 
                             `${c.name}——${c.identity || ''}，${c.brief || ''}`
                         ).join('；')
+                        const customCharacters = inspireCharacters.value.trim()
+                        const existingCharacters = [characters, customCharacters].filter(c => c).join('；')
                         const r = await fetch('/api/v1/story/inspire', {
                             method: 'POST',
                             headers: {'Content-Type': 'application/json'},
@@ -2612,9 +3242,10 @@
                                 genre: selectedWork.value.genre,
                                 style: selectedWork.value.style,
                                 existing_outline: selectedWork.value.outline,
-                                existing_characters: characters,
+                                existing_characters: existingCharacters,
+                                user_request: inspireRequest.value.trim(),
                                 api_key: apiKey.value,
-                                types: ['plot_points', 'characters', 'foreshadowings'],
+                                types: selectedInspireTypes.value,
                                 count: inspireCount.value,
                                 temperature: inspireTemperature.value
                             })
@@ -2635,6 +3266,11 @@
                 function startChapter(work, vol) {
                     const targetVol = vol || work.volumes?.[0] || {}
                     storyForm.theme = work.title
+                    storyForm.genre = work.genre || ''
+                    storyForm.style = work.style || ''
+                    storyForm.perspective = work.perspective || ''
+                    storyForm.conflict = work.conflict || ''
+                    storyForm.mood = work.mood || ''
                     storyForm.world_setting = work.world_setting
                     storyForm.work_id = work.id
                     storyForm.volume_id = targetVol.id || ''
@@ -2644,6 +3280,13 @@
                     } else if (work.outline) {
                         storyForm.outline = work.outline
                     }
+                    // 自动计算章节序号和标题
+                    const chapterCount = targetVol.chapter_ids?.length || 0
+                    const nextChapterNum = chapterCount + 1
+                    storyForm.chapter_number = nextChapterNum
+                    // 先尝试用规划的章节标题
+                    const plannedTitle = targetVol.chapter_outlines?.[chapterCount]?.title
+                    currentTitle.value = plannedTitle || `第${nextChapterNum}章`
                     // 自动填充角色（优先从卷的角色列表，没有则从作品级角色）
                     if (targetVol.characters && targetVol.characters.length > 0) {
                         charactersList.value = targetVol.characters.map(c => ({
@@ -2654,6 +3297,7 @@
                             personality: c.personality || '',
                             background: c.background || '',
                             motivation: c.motivation || '',
+                            brief: c.brief || '',
                             relationships: c.relationships || [],
                             is_template: false
                         }))
@@ -2666,6 +3310,7 @@
                             personality: c.personality || '',
                             background: c.background || '',
                             motivation: c.motivation || '',
+                            brief: c.brief || '',
                             relationships: c.relationships || [],
                             is_template: false
                         }))
@@ -2688,6 +3333,18 @@
                     }
                     showWorkDetail.value = false
                     currentTab.value = 'create'
+                }
+
+                async function deleteChapterFromWork(workId, chapter) {
+                    const ok = await ModalConfirm({ title: '删除章节', message: `确定从作品中删除「${chapter.title || chapter.id}」吗？`, type: 'danger', confirmText: '确认删除' })
+                    if (!ok) return
+                    const r = await fetch(`/api/v1/works/${workId}/chapters/${chapter.id}`, {method: 'DELETE'})
+                    if (r.ok) {
+                        showToast('章节已删除', 'success')
+                        await viewWork(selectedWork.value)
+                    } else {
+                        showToast('删除失败', 'error')
+                    }
                 }
 
                 function continueFromChapter(work, chapter) {
@@ -2891,7 +3548,7 @@
                     storyForm.theme = ''; storyForm.genre = '短篇小说'; storyForm.style = '温馨'
                     storyForm.length = 2000; storyForm.background = ''; storyForm.perspective = '第三人称全知'
                     storyForm.conflict = '人与人'; storyForm.mood = '轻松愉快'; storyForm.outline = ''
-                    storyForm.world_setting = ''; storyForm.continuation_mode = 'next_chapter'
+                    storyForm.world_setting = ''; storyForm.continuation_mode = ''
                     storyForm.previous_story_id = ''; storyForm.work_id = ''
                     charactersList.value = []; foreshadowings.value = []; selectedTemplate.value = null
                     showToast('表单已清空', 'info')
@@ -2960,18 +3617,28 @@
                     generationProgress, generationStepLabel, batchGenerating, batchProgress,
                     historyPage, historyTotalPages, historyTotal,
                     loadWorks, createWork, viewWork, deleteWork, generateSummary, filteredWorks, workSearchQuery,
-                    startChapter, continueFromChapter, viewChapter, openEditChapter,
+                    workProgress, outlineStages,
+                    startChapter, continueFromChapter, viewChapter, openEditChapter, deleteChapterFromWork, fillChapterOutline,
+                    planChapterSlots, addPlanChapterSlot, removeLastPlanChapterSlot, removePlanChapterSlotAt, syncPlanChapterSlots,
                     volumeNodes, addVolume, deleteVolume, renameVolume, previewChapter, saveVolumeState,
                     volumeUiState, toggleVolume, startRenameVolume, cancelRenameVolume,
-                    saveVolumePlan, generateVolume, getVolUi,
+                    saveVolumePlan, generateVolume, getVolUi, aiVolumePlan,
                     toggleChapterChar, isCharInChapter, isFirstChapterChar,
                     getChapterCharStatus, fillAllChapterCharacters, validateChapterCharacters,
                     confirmModal, ModalConfirm,
                     showInspiration, isInspiring, inspireData, inspireError,
-                    getInspiration, applyPlotPoint, applyForeshadowing, applyCharacter,
-                    continueNextChapter, backToWorkDetail, lastSavedStoryId,
+                    getInspiration, generateWorkInspiration,
+                    inspirationContext, openInspiration,
+                    applyPlotPoint, applyForeshadowing, applyCharacter,
+                    applyWorldBuilding, applyTitle, applyScene, applyDialogue,
+                    applyWorldToWork, applyOutlineToWork, applyCharacterToWork, applyForeshadowingToWork,
+                    inspireTypeOptions, selectedInspireTypes, toggleInspireType,
+                    inspireCount, inspireTemperature, inspireCharacters, inspireRequest,
+                    refreshSingleType, clearInspiration,
+                    continueNextChapter, backToWorkDetail, lastSavedStoryId, lastChapterTitle,
                     editingWorkField, editingWorkValue, toggleWorkEdit, cancelWorkEdit, saveWorkEdit,
-                    addWorkCharacter, editWorkCharacter, deleteWorkCharacter,
+                    addWorkCharacter, editWorkCharacter, deleteWorkCharacter, saveWorkCharacter,
+                    showWorkCharModal, workCharForm, workCharEditingIdx,
                     getInspirationFromWork
                 }
             }
