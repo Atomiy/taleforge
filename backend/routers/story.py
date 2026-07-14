@@ -70,20 +70,78 @@ async def get_story_by_id(story_id: str) -> Story:
 
 @router.post("/inspire")
 async def inspire(data: dict):
-    """根据作品主题/世界观，用 AI 生成剧情点子、伏笔和角色建议。"""
+    """根据作品主题/世界观，用 AI 生成各类创作灵感。支持传入作品角色信息进行适配。"""
     theme = data.get("theme", "")
     world_setting = data.get("world_setting", "")
     genre = data.get("genre", "")
     style = data.get("style", "")
     existing_foreshadowings = data.get("existing_foreshadowings", [])
     existing_outline = data.get("existing_outline", "")
+    existing_characters = data.get("existing_characters", "")
     api_key = data.get("api_key") or DEEPSEEK_API_KEY
     if not api_key:
         return {"error": "请配置 API Key"}
 
+    inspire_types = data.get("types", ["plot_points", "characters", "foreshadowings"])
+    count = data.get("count", 3)
+    temperature = data.get("temperature", 0.8)
+
     existing_fw = "\n".join(f"- {f}" for f in existing_foreshadowings) if existing_foreshadowings else "无"
+
+    type_configs = {
+        "plot_points": {
+            "label": "剧情发展",
+            "format": '{"title": "情节点子标题", "description": "简要描述"}',
+            "prompt": f"给出 {count} 个剧情发展方向，要有创意、有新意，适合{genre}体裁"
+        },
+        "characters": {
+            "label": "角色灵感",
+            "format": '{"name": "角色名", "identity": "身份", "appearance": "外貌", "personality": "性格", "brief": "一句话简介", "motivation": "核心动机"}',
+            "prompt": f"给出 {count} 个角色建议，每个角色要有鲜明的身份和特点，包含核心动机"
+        },
+        "foreshadowings": {
+            "label": "伏笔建议",
+            "format": '{"content": "伏笔内容", "type": "悬念/预言/秘密/线索", "reveal": "预期揭示时机"}',
+            "prompt": f"给出 {count} 个伏笔建议，类型可以是悬念/预言/秘密/线索，避免与已有伏笔重复。已有伏笔：{existing_fw}"
+        },
+        "world_building": {
+            "label": "世界观设定",
+            "format": '{"aspect": "设定方面", "detail": "详细描述"}',
+            "prompt": f"给出 {count} 个世界观设定细节，丰富当前世界。现有设定：{world_setting or '无'}"
+        },
+        "titles": {
+            "label": "标题创意",
+            "format": '{"title": "标题", "subtitle": "副标题（可选）", "style": "风格"}',
+            "prompt": f"给出 {count} 个故事标题创意，风格匹配{style}"
+        },
+        "scenes": {
+            "label": "场景描述",
+            "format": '{"title": "场景名称", "description": "场景描述", "mood": "氛围"}',
+            "prompt": f"给出 {count} 个场景描述，包含详细的视觉画面和氛围营造"
+        },
+        "dialogues": {
+            "label": "对话灵感",
+            "format": '{"character": "说话者", "dialogue": "对话内容", "context": "上下文"}',
+            "prompt": f"给出 {count} 段对话灵感，展现角色性格和推动剧情"
+        }
+    }
+
+    type_items = [t for t in inspire_types if t in type_configs]
+    if not type_items:
+        type_items = ["plot_points", "characters", "foreshadowings"]
+
+    type_prompts = []
+    type_formats = []
+    for t in type_items:
+        cfg = type_configs[t]
+        type_prompts.append(f"- {cfg['label']}：{cfg['prompt']}")
+        type_formats.append(f'  "{t}": [\n    {cfg["format"]}\n  ]')
+
+    format_str = "{\n" + ",\n".join(type_formats) + "\n}"
+    prompt_str = "\n".join(type_prompts)
+
     llm = LLMClient(api_key=api_key)
-    prompt = f"""你是一个创意灵感助手。请根据以下故事设定，分别从三个维度提供创作建议。
+    prompt = f"""你是一个创意灵感助手。请根据以下故事设定，提供创作建议。
 
 【故事设定】
 主题：{theme}
@@ -91,30 +149,24 @@ async def inspire(data: dict):
 风格：{style}
 世界观：{world_setting}
 现有大纲：{existing_outline or '无'}
-已有伏笔：{existing_fw}
+已有角色：{existing_characters or '无'}
+
+【生成要求】
+{prompt_str}
 
 请输出 JSON（不要其他内容），格式如下：
-{{
-  "plot_points": [
-    {{"title": "情节点子标题", "description": "简要描述"}}
-  ],
-  "foreshadowings": [
-    {{"content": "伏笔内容", "type": "悬念/预言/秘密/线索"}}
-  ],
-  "characters": [
-    {{"name": "角色名", "identity": "身份", "appearance": "外貌", "personality": "性格", "brief": "一句话简介"}}
-  ]
-}}
+{format_str}
 
 要求：
-- plot_points：给出 3 个剧情发展方向，要有创意、有新意
-- foreshadowings：给出 3 个伏笔建议，类型可以是悬念/预言/秘密/线索，避免与已有伏笔重复
-- characters：给出 2-3 个角色建议，每个角色要有鲜明的身份和特点，适合这个设定
+- 每个类别给出 {count} 个建议
+- 内容要有创意，避免陈词滥调
+- 与现有设定保持一致
+- 如果已有角色不为空，剧情发展和对话灵感要考虑这些角色的性格和动机，让他们自然地参与剧情
+- 角色灵感可以是对已有角色的深化，也可以是新增角色建议
 """
     try:
         messages = [{"role": "user", "content": prompt}]
-        result = await llm.chat(messages, temperature=0.8, max_tokens=2048)
-        # 清理可能的 markdown 代码块标记
+        result = await llm.chat(messages, temperature=temperature, max_tokens=3072)
         result = result.strip()
         if result.startswith("```"):
             result = result.split("\n", 1)[1] if "\n" in result else result[3:]

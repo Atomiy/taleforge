@@ -80,6 +80,8 @@ class Work(BaseModel):
     summary: str = ""  # 内容概要
     chapter_ids: List[str] = []  # 有序的章节ID列表（兼容旧数据+同步用）
     volumes: List[Volume] = []   # 作品-卷-章节三级结构
+    characters: List[dict] = []  # 作品级角色卡片
+    # 角色格式: {"name": "角色名", "identity": "身份", "personality": "性格", "motivation": "动机", "brief": "简介"}
     created_at: str = ""
     updated_at: str = ""
     genre: str = "奇幻"

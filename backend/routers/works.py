@@ -32,6 +32,7 @@ async def create_work(data: dict = Body(...)):
         outline=data.get("outline", ""),
         genre=data.get("genre", "奇幻"),
         style=data.get("style", "史诗"),
+        characters=data.get("characters", []),
         created_at=now,
         updated_at=now,
     )
@@ -140,6 +141,66 @@ async def remove_chapter(work_id: str, story_id: str):
     if not work:
         raise HTTPException(status_code=404, detail="作品或章节不存在")
     return work
+
+
+# ---- 角色管理 ----
+
+@router.get("/{work_id}/characters")
+async def get_work_characters(work_id: str):
+    """获取作品的角色列表。"""
+    work = work_manager.get_work_by_id(work_id)
+    if not work:
+        raise HTTPException(status_code=404, detail="作品不存在")
+    return {"characters": work.characters}
+
+
+@router.post("/{work_id}/characters")
+async def add_work_character(work_id: str, data: dict = Body(...)):
+    """添加角色到作品。"""
+    work = work_manager.get_work_by_id(work_id)
+    if not work:
+        raise HTTPException(status_code=404, detail="作品不存在")
+    
+    character = {
+        "name": data.get("name", ""),
+        "identity": data.get("identity", ""),
+        "personality": data.get("personality", ""),
+        "motivation": data.get("motivation", ""),
+        "brief": data.get("brief", ""),
+        "appearance": data.get("appearance", ""),
+        "background": data.get("background", ""),
+    }
+    work.characters.append(character)
+    work_manager.save_work(work)
+    return {"work": work}
+
+
+@router.put("/{work_id}/characters/{char_index}")
+async def update_work_character(work_id: str, char_index: int, data: dict = Body(...)):
+    """更新作品中的角色。"""
+    work = work_manager.get_work_by_id(work_id)
+    if not work:
+        raise HTTPException(status_code=404, detail="作品不存在")
+    if char_index < 0 or char_index >= len(work.characters):
+        raise HTTPException(status_code=404, detail="角色不存在")
+    
+    work.characters[char_index].update(data)
+    work_manager.save_work(work)
+    return {"work": work}
+
+
+@router.delete("/{work_id}/characters/{char_index}")
+async def delete_work_character(work_id: str, char_index: int):
+    """删除作品中的角色。"""
+    work = work_manager.get_work_by_id(work_id)
+    if not work:
+        raise HTTPException(status_code=404, detail="作品不存在")
+    if char_index < 0 or char_index >= len(work.characters):
+        raise HTTPException(status_code=404, detail="角色不存在")
+    
+    work.characters.pop(char_index)
+    work_manager.save_work(work)
+    return {"work": work}
 
 
 # ---- 概要生成 ----
