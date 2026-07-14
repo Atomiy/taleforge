@@ -30,17 +30,40 @@ class WorkManager:
     def save_work(self, work: Work) -> None:
         with _lock:
             works = self._read_unlocked()
+            # 去重：如果已存在同 ID 作品则替换，否则插入
+            for i, w in enumerate(works):
+                if w.id == work.id:
+                    works[i] = work
+                    self._write_unlocked(works)
+                    return
             works.insert(0, work)
             self._write_unlocked(works)
 
     def get_all_works(self) -> List[Work]:
         with _lock:
-            return self._read_unlocked()
+            works = self._read_unlocked()
+            # 去重：保留每个 ID 最后一次出现的记录
+            seen = set()
+            deduped = []
+            for w in reversed(works):
+                if w.id not in seen:
+                    seen.add(w.id)
+                    deduped.append(w)
+            deduped.reverse()
+            if len(deduped) != len(works):
+                # 有重复，写回清理后的数据
+                self._write_unlocked(deduped)
+            return deduped
 
     def get_work_by_id(self, work_id: str) -> Optional[Work]:
         with _lock:
             works = self._read_unlocked()
-            return next((w for w in works if w.id == work_id), None)
+            # 去重取最后一个（最新的）
+            found = None
+            for w in works:
+                if w.id == work_id:
+                    found = w
+            return found
 
     def delete_work(self, work_id: str) -> bool:
         with _lock:
@@ -101,7 +124,6 @@ class WorkManager:
                     updated_work = Work(**work_dict)
                     for v in updated_work.volumes:
                         v.chapter_ids = [cid for cid in v.chapter_ids if cid != story_id]
-                    updated_work.volumes = [v for v in updated_work.volumes if v.chapter_ids]
                     updated_work.updated_at = datetime.now().isoformat()
                     works[i] = updated_work
                     self._write_unlocked(works)
@@ -138,10 +160,19 @@ class WorkManager:
                 work_dict = w.model_dump()
                 remaining = [v for v in w.volumes if v.id != volume_id]
                 if target.chapter_ids and remaining:
-                    if len(remaining) >= target.number:
-                        remaining[target.number - 1].chapter_ids.extend(target.chapter_ids)
+                    # 将被删卷的章节移到前一卷（按 number 排序找前一个）
+                    remaining_sorted = sorted(remaining, key=lambda v: v.number)
+                    prev = None
+                    for v in remaining_sorted:
+                        if v.number < target.number:
+                            prev = v
+                        else:
+                            break
+                    if prev:
+                        prev.chapter_ids.extend(target.chapter_ids)
                     else:
-                        remaining[-1].chapter_ids.extend(target.chapter_ids)
+                        # 无前一卷（被删的是第一卷），移到最后卷
+                        remaining_sorted[-1].chapter_ids.extend(target.chapter_ids)
                 work_dict["volumes"] = [v.model_dump() for v in remaining]
                 work_dict["updated_at"] = datetime.now().isoformat()
                 works[i] = Work(**work_dict)

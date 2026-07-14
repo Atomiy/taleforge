@@ -6,6 +6,7 @@ from backend.models.work import Work, Volume
 from backend.services.work_manager import WorkManager
 from backend.services.history_manager import HistoryManager
 from backend.services.llm_client import LLMClient
+from backend.config import DEEPSEEK_API_KEY
 
 logger = logging.getLogger(__name__)
 
@@ -136,11 +137,126 @@ async def add_chapter(work_id: str, data: dict = Body(...)):
 
 @router.delete("/{work_id}/chapters/{story_id}")
 async def remove_chapter(work_id: str, story_id: str):
-    """从作品中移除章节。"""
+    """从作品中移除章节，并删除对应的故事数据。"""
     work = work_manager.remove_chapter_from_work(work_id, story_id)
     if not work:
         raise HTTPException(status_code=404, detail="作品或章节不存在")
+    # 同时删除对应的故事数据
+    history_manager.delete_story(story_id)
     return work
+
+
+# ---- AI 卷规划辅助 ----
+
+@router.post("/{work_id}/volumes/{volume_id}/ai-plan")
+async def ai_volume_plan(work_id: str, volume_id: str, data: dict = Body(...)):
+    """AI辅助生成多章规划内容。"""
+    work = work_manager.get_work_by_id(work_id)
+    if not work:
+        raise HTTPException(status_code=404, detail="作品不存在")
+    vol = next((v for v in work.volumes if v.id == volume_id), None)
+    if not vol:
+        raise HTTPException(status_code=404, detail="卷不存在")
+    api_key = data.get("api_key") or DEEPSEEK_API_KEY
+    if not api_key:
+        return {"success": False, "error": "请配置 API Key"}
+    tips = data.get("tips", "")
+    num_chapters = data.get("num_chapters", 5)
+    try:
+        llm = LLMClient(api_key)
+
+        # 角色卡片信息
+        character_cards = []
+        for c in work.characters:
+            card_parts = [f"名称：{c.get('name', '')}"]
+            if c.get('identity'):
+                card_parts.append(f"身份：{c['identity']}")
+            if c.get('personality'):
+                card_parts.append(f"性格：{c['personality']}")
+            if c.get('motivation'):
+                card_parts.append(f"动机：{c['motivation']}")
+            if c.get('brief'):
+                card_parts.append(f"简介：{c['brief']}")
+            if c.get('background'):
+                card_parts.append(f"背景：{c['background']}")
+            character_cards.append(" | ".join(card_parts))
+        characters_text = "\n".join(character_cards) if character_cards else "无"
+
+        # 已有卷信息（用于衔接）
+        vol_index = next((i for i, v in enumerate(work.volumes) if v.id == volume_id), -1)
+        prev_vol_title = work.volumes[vol_index - 1].title if vol_index > 0 else "无（第一卷）"
+        next_vol_title = work.volumes[vol_index + 1].title if vol_index < len(work.volumes) - 1 else "无（最后一卷）"
+
+        # 该卷已有规划数据
+        vol_chapter_outlines = getattr(vol, 'chapter_outlines', []) or []
+        vol_characters = getattr(vol, 'characters', []) or []
+
+        prompt = f"""你是一位专业的创作策划师，擅长为小说作品构思多章规划。
+
+作品信息：
+- 标题：{work.title}
+- 类型：{work.genre}
+- 风格：{work.style}
+- 世界观：{work.world_setting[:500] if work.world_setting else '无'}
+- 故事大纲：{work.outline[:500] if work.outline else '无'}
+- 作品概要：{work.summary[:300] if work.summary else '无'}
+
+作品级角色卡片（请优先使用并尊重这些角色设定）：
+{characters_text}
+
+卷信息：
+- 卷标题：{vol.title or '未命名'}
+- 上一卷：{prev_vol_title}
+- 下一卷：{next_vol_title}
+- 卷已有大纲：{vol.outline[:200] if vol.outline else '无'}
+- 卷已有章节规划：{('规划了 ' + str(len(vol_chapter_outlines)) + ' 章') if vol_chapter_outlines else '无'}
+
+用户补充要求：{tips if tips else '无'}
+
+请为该卷规划 {num_chapters} 章的内容，以 JSON 格式输出以下规划建议：
+
+{{
+  "outline": "本卷的整体故事脉络和发展方向（100-200字）",
+  "responsibility": "本卷在整部作品中的职责和作用（50-100字）",
+  "connection_to_prev": "本卷与上一卷的衔接方式",
+  "connection_to_next": "本卷为下一卷做的铺垫",
+  "chapters": [
+    {{"title": "第1章标题", "outline": "本章大纲（50-100字）", "key_events": ["关键事件1", "关键事件2", "关键事件3"]}},
+    ...（共{num_chapters}章）
+  ],
+  "characters": [
+    {{"name": "角色名", "identity": "在本卷中的身份/作用", "brief": "在本卷中的简要说明"}}
+  ],
+  "foreshadowings": [
+    {{"item": "伏笔内容", "purpose": "该伏笔的目的/作用"}}
+  ]
+}}
+
+要求：
+1. 严格使用作品级角色卡片中的角色，不要凭空创造新角色
+2. 各章之间要有连贯的情节递进
+3. 伏笔应与本卷故事发展贴合
+4. 请结合作品故事大纲和卷已有大纲来规划，确保各卷内容合理衔接
+5. 只输出JSON，不要其他内容"""
+
+        messages = [{"role": "system", "content": "你是专业创作策划师"}, {"role": "user", "content": prompt}]
+        result = await llm.chat(messages, temperature=0.8, max_tokens=4096)
+        result = result.strip()
+        if result.startswith("```"):
+            first_newline = result.find("\n")
+            if first_newline != -1:
+                result = result[first_newline+1:]
+            else:
+                result = result[3:]
+            if result.endswith("```"):
+                result = result[:-3]
+            result = result.strip()
+        import re, json as json_mod
+        result = re.sub(r',\s*([\]}])', r'\1', result)
+        parsed = json_mod.loads(result)
+        return {"success": True, "data": parsed}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
 
 
 # ---- 角色管理 ----
@@ -163,12 +279,14 @@ async def add_work_character(work_id: str, data: dict = Body(...)):
     
     character = {
         "name": data.get("name", ""),
+        "age": data.get("age", ""),
         "identity": data.get("identity", ""),
         "personality": data.get("personality", ""),
         "motivation": data.get("motivation", ""),
         "brief": data.get("brief", ""),
         "appearance": data.get("appearance", ""),
         "background": data.get("background", ""),
+        "relationships": data.get("relationships", []),
     }
     work.characters.append(character)
     work_manager.save_work(work)

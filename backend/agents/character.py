@@ -111,11 +111,16 @@ class CharacterAgent(BaseAgent):
 
         if existing_chars:
             existing_str = json.dumps(existing_chars, ensure_ascii=False)
+            user_chars_str = json.dumps(user_chars, ensure_ascii=False) if user_chars else ""
+            user_chars_block = f"""
+## 用户自定义角色设定（包含详细的性格/动机/背景，必须优先保留）
+{user_chars_str}
+""" if user_chars_str else ""
             prompt = f"""你是一位专业的角色设计师，擅长创造立体、真实的角色。
 
 ## 已有角色（来自前文，必须保留）
 {existing_str}
-
+{user_chars_block}
 ## 故事大纲
 {outline_str}
 {scope_block}

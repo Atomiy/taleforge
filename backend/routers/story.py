@@ -78,6 +78,7 @@ async def inspire(data: dict):
     existing_foreshadowings = data.get("existing_foreshadowings", [])
     existing_outline = data.get("existing_outline", "")
     existing_characters = data.get("existing_characters", "")
+    user_request = data.get("user_request", "")
     api_key = data.get("api_key") or DEEPSEEK_API_KEY
     if not api_key:
         return {"error": "请配置 API Key"}
@@ -150,6 +151,7 @@ async def inspire(data: dict):
 世界观：{world_setting}
 现有大纲：{existing_outline or '无'}
 已有角色：{existing_characters or '无'}
+用户要求：{user_request or '无'}
 
 【生成要求】
 {prompt_str}
@@ -163,17 +165,49 @@ async def inspire(data: dict):
 - 与现有设定保持一致
 - 如果已有角色不为空，剧情发展和对话灵感要考虑这些角色的性格和动机，让他们自然地参与剧情
 - 角色灵感可以是对已有角色的深化，也可以是新增角色建议
+- 如果用户有具体要求，请优先满足用户的要求
 """
     try:
         messages = [{"role": "user", "content": prompt}]
         result = await llm.chat(messages, temperature=temperature, max_tokens=3072)
         result = result.strip()
         if result.startswith("```"):
-            result = result.split("\n", 1)[1] if "\n" in result else result[3:]
+            first_newline = result.find("\n")
+            if first_newline != -1:
+                result = result[first_newline+1:]
+            else:
+                result = result[3:]
             if result.endswith("```"):
                 result = result[:-3]
             result = result.strip()
-        parsed = json.loads(result)
+        # 智能 JSON 修复：处理 AI 常见错误
+        import re
+        # 移除注释（// 或 # 开头的行）
+        result = re.sub(r'(?m)^\s*(//|#).*$', '', result)
+        # 移除尾随逗号（在 } 或 ] 前）
+        result = re.sub(r',\s*([\]}])', r'\1', result)
+        # 尝试修复单引号导致的 JSON 错误
+        try:
+            parsed = json.loads(result)
+        except json.JSONDecodeError:
+            # 如果还是失败，尝试更激进的修复
+            # 替换所有单引号为双引号（但需避开已转义的）
+            fixed = result
+            # 仅替换 JSON 值中的单引号
+            fixed = re.sub(r"(?<=:)\s*'([^']*)'(?=\s*[,}\]])", r'"\1"', fixed)
+            try:
+                parsed = json.loads(fixed)
+            except json.JSONDecodeError:
+                # 提取最外层的 {} 块
+                brace_start = fixed.find('{')
+                brace_end = fixed.rfind('}')
+                if brace_start != -1 and brace_end != -1 and brace_end > brace_start:
+                    fixed = fixed[brace_start:brace_end+1]
+                    parsed = json.loads(fixed)
+                else:
+                    raise
         return {"success": True, "data": parsed}
+    except json.JSONDecodeError as e:
+        return {"success": False, "error": f"AI 返回格式错误: {e}", "raw": result if 'result' in dir() else ""}
     except Exception as e:
         return {"success": False, "error": str(e), "raw": result if 'result' in dir() else ""}
