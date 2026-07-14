@@ -13,6 +13,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **AI 规划输出分章节大纲**：后端 prompt 强化，要求输出多章规划的 title/outline/key_events 数组
 - **规划面板显示章节大纲计划**：AI 生成的每章标题、大纲、关键事件列表在面板底部展示，支持一键跳转创作并填入对应大纲
 - **规划保存章节大纲**：`saveVolumePlan` 同步持久化 `chapter_outlines` 到作品数据
+- **AI 卷规划上下文感知**：后端 prompt 新增已完成章节回顾（标题+开头内容）、故事大纲阶段自动标注✅⏳、上一章结尾引用；AI 规划时明确不可重演已写情节，必须从结尾继续推进
+- **跨卷续写衔接**：`generateVolume` 生成非第一卷时，`prevId` 自动设为前一卷最后一章的 ID，Writer 智能体获得完整续写上下文
 
 ## [0.4.0] - 2026-07-14
 

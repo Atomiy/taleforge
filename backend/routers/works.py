@@ -182,10 +182,75 @@ async def ai_volume_plan(work_id: str, volume_id: str, data: dict = Body(...)):
             character_cards.append(" | ".join(card_parts))
         characters_text = "\n".join(character_cards) if character_cards else "无"
 
-        # 已有卷信息（用于衔接）
+        # ---- 收集已完成章节的上下文 ----
         vol_index = next((i for i, v in enumerate(work.volumes) if v.id == volume_id), -1)
         prev_vol_title = work.volumes[vol_index - 1].title if vol_index > 0 else "无（第一卷）"
         next_vol_title = work.volumes[vol_index + 1].title if vol_index < len(work.volumes) - 1 else "无（最后一卷）"
+
+        # 收集之前所有卷的已完成章节
+        completed_volumes = work.volumes[:vol_index]  # 当前卷之前的所有卷
+        completed_chapters_summary = []
+        total_written = 0
+        last_chapter_content = ""
+
+        for cv in completed_volumes:
+            vol_chapters = []
+            for cid in cv.chapter_ids:
+                story = history_manager.get_story_by_id(cid)
+                if story and story.content:
+                    vol_chapters.append(story)
+                    total_written += 1
+                    last_chapter_content = f"标题：{story.title}\n梗概：{outline_text}\n故事结尾300字：...{story.content[-300:]}" if (outline_text := (story.outline.outline if hasattr(story.outline, 'outline') and story.outline else story.outline or '')) else ""
+            if vol_chapters:
+                completed_chapters_summary.append(f"【{cv.title}】（共{len(vol_chapters)}章）")
+                for s in vol_chapters:
+                    outline_text = ""
+                    if hasattr(s, 'outline') and s.outline:
+                        outline_text = s.outline.outline if hasattr(s.outline, 'outline') and s.outline else str(s.outline)
+                    key_moments = s.content[:200].replace('\n', ' ') + "……" if s.content else ""
+                    completed_chapters_summary.append(f"  - 第{getattr(s, 'chapter_number', '?')}章《{s.title}》：{key_moments}")
+
+        story_so_far = "\n".join(completed_chapters_summary) if completed_chapters_summary else "尚无已完成的章节"
+
+        # 最后已完成章节的内容（结尾部分，供衔接参考）
+        last_section = last_chapter_content[:500] if last_chapter_content else "无"
+
+        # ---- 故事大纲阶段分析 ----
+        full_outline = (work.outline or "").strip()
+        # 检测 【标签】 格式的大纲阶段
+        import re as re_mod
+        stages = re_mod.findall(r'【([^】]+)】', full_outline)
+        if stages:
+            # 将大纲按阶段拆分，标注已完成/待完成
+            outline_segments = re_mod.split(r'(【[^】]+】)', full_outline)
+            # 基于已写入的章节数量来推断完成了多少个阶段
+            # 每卷最少写1章，最多可能多章覆盖一个阶段
+            # 更精确：根据已完成章节的 chapter_outlines 或大纲匹配度来判断
+            completed_stage_count = 0
+            if completed_volumes:
+                # 统计已完成的章数，每个大纲阶段至少对应1章
+                for cv in completed_volumes:
+                    completed_stage_count += len(cv.chapter_ids)
+                # 每章推进一个阶段（但不能超过总阶段数）
+                completed_stage_count = min(completed_stage_count, len(stages))
+
+            outline_with_status = ""
+            idx = 0
+            seg_idx = 0
+            while seg_idx < len(outline_segments):
+                seg = outline_segments[seg_idx]
+                if re_mod.match(r'【[^】]+】', seg):
+                    stage_done = idx < completed_stage_count
+                    status_mark = "✅ 已完成" if stage_done else "⏳ 待创作"
+                    outline_with_status += f"\n{seg} — {status_mark}\n"
+                    idx += 1
+                else:
+                    if seg.strip():
+                        outline_with_status += seg.strip() + "\n"
+                seg_idx += 1
+            outline_section = outline_with_status
+        else:
+            outline_section = full_outline[:1000] if full_outline else "无"
 
         # 该卷已有规划数据
         vol_chapter_outlines = getattr(vol, 'chapter_outlines', []) or []
@@ -197,18 +262,27 @@ async def ai_volume_plan(work_id: str, volume_id: str, data: dict = Body(...)):
 - 标题：{work.title}
 - 类型：{work.genre}
 - 风格：{work.style}
-- 世界观：{work.world_setting[:500] if work.world_setting else '无'}
-- 故事大纲：{work.outline[:500] if work.outline else '无'}
-- 作品概要：{work.summary[:300] if work.summary else '无'}
+- 世界观：{work.world_setting[:800] if work.world_setting else '无'}
+- 作品概要：{work.summary[:500] if work.summary else '无'}
+
+=== 故事大纲（各阶段状态） ===
+{outline_section[:2000]}
 
 作品级角色卡片（请优先使用并尊重这些角色设定）：
 {characters_text}
 
+=== 已完成章节回顾（故事发展至此） ===
+{story_so_far[:2000]}
+
+=== 上一卷/上一章结尾（衔接参考） ===
+{last_section}
+
 卷信息：
 - 卷标题：{vol.title or '未命名'}
+- 本卷是第 {vol_index + 1} 卷（共 {len(work.volumes)} 卷）
 - 上一卷：{prev_vol_title}
 - 下一卷：{next_vol_title}
-- 卷已有大纲：{vol.outline[:200] if vol.outline else '无'}
+- 卷已有大纲：{vol.outline[:300] if vol.outline else '无'}
 - 卷已有章节规划：{('规划了 ' + str(len(vol_chapter_outlines)) + ' 章') if vol_chapter_outlines else '无'}
 
 用户补充要求：{tips if tips else '无'}
@@ -232,14 +306,16 @@ async def ai_volume_plan(work_id: str, volume_id: str, data: dict = Body(...)):
   ]
 }}
 
-要求：
-1. 严格使用作品级角色卡片中的角色，不要凭空创造新角色
-2. 各章之间要有连贯的情节递进
-3. 伏笔应与本卷故事发展贴合
-4. 请结合作品故事大纲和卷已有大纲来规划，确保各卷内容合理衔接
-5. 只输出JSON，不要其他内容"""
+=== 核心要求（必须遵守） ===
+1. ⚠️ 故事不能从头开始！故事已经在上一卷/上一章的基础上发展到了新的阶段。本卷的内容必须从**已完成章节的结尾处**继续推进，不能重演或重新开始已经写过的情节。
+2. 严格使用作品级角色卡片中的角色，不要凭空创造与已有角色无关的新角色
+3. 各章之间要有连贯的情节递进
+4. 伏笔应与本卷故事发展贴合
+5. 结合作品故事大纲来规划，优先推进标注为「⏳ 待创作」的阶段
+6. 确保本卷内容与已完成章节的内容在时间线、情节逻辑、角色状态上保持一致，不能出现矛盾
+7. 只输出JSON，不要其他内容"""
 
-        messages = [{"role": "system", "content": "你是专业创作策划师"}, {"role": "user", "content": prompt}]
+        messages = [{"role": "system", "content": "你是专业创作策划师，擅长续写和扩展已有故事。"}, {"role": "user", "content": prompt}]
         result = await llm.chat(messages, temperature=0.8, max_tokens=4096)
         result = result.strip()
         if result.startswith("```"):

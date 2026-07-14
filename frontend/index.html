@@ -2594,6 +2594,14 @@
                     showWorkDetail.value = false
                     currentTab.value = 'create'
                     let prevId = ''
+                    // 如果不是第一卷，查找前一卷的最后一章作为续写起点
+                    const volIndex = work.volumes?.findIndex(v => v.id === vol.id) ?? -1
+                    if (volIndex > 0) {
+                        const prevVol = work.volumes[volIndex - 1]
+                        if (prevVol?.chapter_ids?.length) {
+                            prevId = prevVol.chapter_ids[prevVol.chapter_ids.length - 1]
+                        }
+                    }
                     let allOk = true
                     try {
                         for (let i = 0; i < chapters.length; i++) {
