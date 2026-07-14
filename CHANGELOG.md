@@ -9,10 +9,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- **CHANGELOG.md**：新增版本变更记录文档，规范记录项目迭代历史
-- **scripts/**：新增测试脚本目录，包含多个故事生成测试样例
-- **guide file/**：新增学习指南和实验报告模板目录
-- **tech-docs/**：新增技术文档目录，包含 API 文档和开发者文档
+- 计划中...
+
+### Changed
+
+- 计划中...
+
+### Fixed
+
+- 计划中...
+
+## [0.3.0] - 2026-07-14
+
+### Added
+
 - **作品级角色卡片系统**：Work 模型新增 `characters` 字段，支持在作品层面管理角色卡片，角色可在创作时自动带入
 - **世界观/大纲编辑功能**：作品详情页支持点击编辑按钮直接修改世界观设定和故事大纲，实时保存
 - **灵感生成角色适配**：后端 `/inspire` 端点支持传入 `existing_characters` 参数，AI 根据已有角色生成适配的剧情和对话灵感
@@ -20,11 +30,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **灵感生成参数可见性**：灵感模态框改为用户可见并可调节灵感类型、数量、创意温度等参数
+- **创作页角色自动填充**：从作品进入创作时，优先填充卷角色，无则填充作品级角色
+
+### Fixed
+
+- **toggleWorkEdit 未定义错误**：修复作品详情页编辑功能报 `toggleWorkEdit is not a function` 的错误
+- **saveWorkCharacter 未定义错误**：移除 return 语句中不存在的函数引用，消除控制台错误
+
+## [0.2.0] - 2026-07-13
+
+### Added
+
+- **CHANGELOG.md**：新增版本变更记录文档，规范记录项目迭代历史
+- **scripts/**：新增测试脚本目录，包含多个故事生成测试样例
+- **guide file/**：新增学习指南和实验报告模板目录
+- **tech-docs/**：新增技术文档目录，包含 API 文档和开发者文档
+
+### Changed
+
 - **文档结构重组**：将 `docs/` 目录下的文档迁移至 `tech-docs/`，清理冗余文档
 - **README.md**：技术架构图改用 Mermaid 替代 ASCII 框图，提升可读性
 - **requirements.txt**：更新依赖版本
-- **灵感生成参数可见性**：灵感模态框改为用户可见并可调节灵感类型、数量、创意温度等参数
-- **创作页角色自动填充**：从作品进入创作时，优先填充卷角色，无则填充作品级角色
 
 ### Fixed
 
@@ -38,8 +65,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **并发数据损坏**：HistoryManager / WorkManager 加文件锁防并发数据损坏
 - **API Key 更新**：修复 works.py 全局 LLMClient 不更新 API Key 的问题
 - **API Key 安全**：清除测试脚本中硬编码的真实 API Key，替换为占位符
-- **toggleWorkEdit 未定义错误**：修复作品详情页编辑功能报 `toggleWorkEdit is not a function` 的错误
-- **saveWorkCharacter 未定义错误**：移除 return 语句中不存在的函数引用，消除控制台错误
 
 ## [0.1.0] - 2026-07-XX
 
