@@ -2100,15 +2100,54 @@
                         ? 'bg-purple-100 text-purple-700 border border-purple-300'
                         : 'bg-gray-100 text-gray-500 border border-gray-200 hover:border-gray-300'
                 }
-                function fillAllChapterCharacters(vol) {
+                async function fillAllChapterCharacters(vol) {
                     const ui = volumeUiState[vol.id]
                     if (!ui) return
-                    const charNames = ui.planCharacters.filter(pc => pc.name && pc.name.trim()).map(pc => pc.name.trim())
-                    const slotCount = planChapterSlots(vol).length
-                    for (let idx = 0; idx < slotCount; idx++) {
-                        ui.planChapterCharMap[idx] = [...charNames]
+                    const chars = ui.planCharacters.filter(pc => pc.name && pc.name.trim())
+                    if (chars.length === 0) return
+                    const slots = planChapterSlots(vol)
+                    if (slots.length === 0) return
+
+                    // 尝试 AI 智能分配
+                    let useAi = false
+                    if (apiKey.value) {
+                        try {
+                            const aiRes = await fetch(`/api/v1/works/${selectedWork.value.id}/volumes/${vol.id}/smart-char-assign`, {
+                                method: 'POST',
+                                headers: {'Content-Type': 'application/json'},
+                                body: JSON.stringify({
+                                    api_key: apiKey.value,
+                                    chapters: slots.map(s => ({title: s.title, outline: s.outline, key_events: s.key_events || []})),
+                                    characters: chars.map(c => ({name: c.name, identity: c.identity || '', brief: c.brief || ''}))
+                                })
+                            })
+                            if (aiRes.ok) {
+                                const aiData = await aiRes.json()
+                                if (aiData.success && aiData.data?.assignments) {
+                                    useAi = true
+                                    const charNames = chars.map(c => c.name.trim())
+                                    for (let idx = 0; idx < slots.length; idx++) {
+                                        const assigned = (aiData.data.assignments[String(idx)] || [])
+                                            .filter(n => charNames.includes(n))
+                                        ui.planChapterCharMap[idx] = [...new Set(assigned)]
+                                    }
+                                    validateChapterCharacters(vol.id)
+                                    showToast('AI 智能分配出场角色完成', 'success')
+                                }
+                            }
+                        } catch (e) {
+                            console.warn('AI 分配失败，使用全填充作为后备', e)
+                        }
                     }
-                    validateChapterCharacters(vol.id)
+                    if (!useAi) {
+                        // 后备：全部角色分配到所有章节
+                        const charNames = chars.map(pc => pc.name.trim())
+                        for (let idx = 0; idx < slots.length; idx++) {
+                            ui.planChapterCharMap[idx] = [...charNames]
+                        }
+                        validateChapterCharacters(vol.id)
+                        showToast('已填充所有角色（AI 不可用）', 'info')
+                    }
                 }
                 function validateChapterCharacters(volId) {
                     const ui = volumeUiState[volId]
@@ -2489,8 +2528,21 @@
                     storyForm.previous_story_id = lastSavedStoryId.value
                     storyForm.chapter_number = nextChapterNum
                     storyForm.continuation_mode = 'next_chapter'
-                    // 保持故事大纲
-                    storyForm.outline = storyForm.outline || selectedWork.value?.outline || ''
+                    // 保持故事大纲 —> 优先用 chapter_outlines 中对应章节的独立大纲
+                    let chOutline = ''
+                    const work = selectedWork.value
+                    if (work?.volumes?.length) {
+                        // 找第一个有 chapter_outlines 的卷
+                        for (const vol of work.volumes) {
+                            const co = (vol.chapter_outlines || []).find(c => c.title?.includes(`第${nextChapterNum}章`) || c.chapter_num === nextChapterNum)
+                            if (co?.outline) {
+                                chOutline = `【${co.title || `第${nextChapterNum}章`}】\n${co.outline}`
+                                if (co.key_events?.length) chOutline += '\n\n关键事件：\n' + co.key_events.join('\n')
+                                break
+                            }
+                        }
+                    }
+                    storyForm.outline = chOutline || storyForm.outline || work?.outline || ''
                     // 自动生成章节标题
                     currentTitle.value = `第${nextChapterNum}章`
                     // 清空当前内容准备新章节
@@ -2561,10 +2613,19 @@
                             storyForm.work_id = work.id
                             storyForm.volume_id = vol.id
                             storyForm.chapter_number = ch.chapter_num || (i + 1)
-                            // 用卷大纲 + 本章关键事件作为 outline
-                            let chOutline = vol.outline || work.outline || ''
-                            if (ch.key_events && ch.key_events.length > 0) {
-                                chOutline += '\n\n本章关键事件：\n' + ch.key_events.join('\n')
+                            // 优先用 chapter_outlines 中的本章大纲，其次用卷大纲
+                            const chOutlineEntry = vol.chapter_outlines?.[i]
+                            let chOutline = ''
+                            if (chOutlineEntry?.outline) {
+                                chOutline = `【本章主题】${chOutlineEntry.title || ch.title || ''}\n${chOutlineEntry.outline}`
+                                if (chOutlineEntry.key_events?.length) {
+                                    chOutline += '\n\n关键事件：\n' + chOutlineEntry.key_events.join('\n')
+                                }
+                            } else {
+                                chOutline = vol.outline || work.outline || ''
+                                if (ch.key_events && ch.key_events.length > 0) {
+                                    chOutline += '\n\n本章关键事件：\n' + ch.key_events.join('\n')
+                                }
                             }
                             storyForm.outline = chOutline
                             // 填充本章出场角色
@@ -2964,8 +3025,8 @@
                         const response = await fetch(`/api/v1/history/?${params}`)
                         const data = await response.json()
                         history.value = (data?.stories || []).map(s => {
-                            // 如果标题等于主题（旧数据缺陷），从正文提取真实标题
-                            if (s.title === s.theme && s.content) {
+                            // 从正文 heading 提取真实标题，覆盖存错的标题
+                            if (s.content) {
                                 const m = s.content.match(/^#{1,4}\s+(.+)$/m)
                                 if (m) s.title = m[1].trim()
                             }
@@ -3050,6 +3111,7 @@
                     storyForm.previous_story_id = story.id
                     storyForm.theme = story.theme + ' - 续写'
                     storyForm.world_setting = story.world_setting || ''
+                    storyForm.outline = story.outline?.outline || story.outline || ''
                     foreshadowings.value = story.foreshadowings || []
                     currentTab.value = 'create'
                     showToast('已加载前作信息，您可以继续创作后续章节！', 'info')
@@ -3090,8 +3152,8 @@
                         const data = await r.json()
                         selectedWork.value = data.work
                         selectedWorkChapters.value = (data.chapters || []).map(c => {
-                            // 如果标题等于作品名（旧数据缺陷），从正文提取真实标题
-                            if (c.title === data.work?.title && c.content) {
+                            // 从正文 heading 提取真实标题，覆盖任何存错的标题
+                            if (c.content) {
                                 const m = c.content.match(/^#{1,4}\s+(.+)$/m)
                                 if (m) c.title = m[1].trim()
                             }

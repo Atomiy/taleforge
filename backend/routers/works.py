@@ -259,6 +259,82 @@ async def ai_volume_plan(work_id: str, volume_id: str, data: dict = Body(...)):
         return {"success": False, "error": str(e)}
 
 
+@router.post("/{work_id}/volumes/{volume_id}/smart-char-assign")
+async def smart_character_assignment(work_id: str, volume_id: str, data: dict = Body(...)):
+    """AI智能分析每章出场角色。"""
+    work = work_manager.get_work_by_id(work_id)
+    if not work:
+        raise HTTPException(status_code=404, detail="作品不存在")
+    vol = next((v for v in work.volumes if v.id == volume_id), None)
+    if not vol:
+        raise HTTPException(status_code=404, detail="卷不存在")
+
+    api_key = data.get("api_key") or DEEPSEEK_API_KEY
+    if not api_key:
+        return {"success": False, "error": "请配置 API Key"}
+
+    chapters = data.get("chapters", [])
+    characters = data.get("characters", [])
+
+    if not chapters or not characters:
+        return {"success": False, "error": "缺少章节信息或角色列表"}
+
+    chapter_lines = []
+    for i, ch in enumerate(chapters):
+        title = ch.get("title", f"第{i+1}章")
+        outline = ch.get("outline", "") or ""
+        key_events = ch.get("key_events", [])
+        events_str = "；".join(key_events) if key_events else "无"
+        chapter_lines.append(f"第{i+1}章【{title}】：{outline[:200]}（关键事件：{events_str}）")
+
+    char_lines = []
+    for c in characters:
+        name = c.get("name", "")
+        identity = c.get("identity", "") or ""
+        brief = c.get("brief", "") or ""
+        char_lines.append(f"{name}（{identity}，{brief}）" if identity or brief else name)
+
+    prompt = f"""你是一位专业的故事角色策划师。请根据以下章节规划，为每一章分析并安排最合理的出场角色。
+
+章节规划：
+{chr(10).join(chapter_lines)}
+
+可用角色：
+{chr(10).join(char_lines)}
+
+角色安排原则：
+1. 主角/核心角色应在大部分章节出场
+2. 仅与特定情节相关的角色只在对应章节出场
+3. 首章应引入核心角色，后续章节逐步引入新角色
+4. 不要安排与本章情节完全无关的角色出场
+5. 如果角色与本章情节的关键事件或主题无关，不应安排出场
+
+以 JSON 格式输出，格式如下：
+{{"assignments": {{"0": ["角色名1", "角色名2"], "1": ["角色名1", "角色名3"], ...}}}}
+其中 key 为章节索引（0 开始的数字），value 为该章应该出场的角色名数组。只输出 JSON，不要任何额外内容。"""
+
+    try:
+        llm = LLMClient(api_key)
+        messages = [{"role": "system", "content": "你是专业故事角色策划师。"}, {"role": "user", "content": prompt}]
+        result = await llm.chat(messages, temperature=0.3, max_tokens=2048)
+        result = result.strip()
+        if result.startswith("```"):
+            first_newline = result.find("\n")
+            if first_newline != -1:
+                result = result[first_newline+1:]
+            else:
+                result = result[3:]
+            if result.endswith("```"):
+                result = result[:-3]
+            result = result.strip()
+        import re, json as json_mod
+        result = re.sub(r',\s*([\]}])', r'\1', result)
+        parsed = json_mod.loads(result)
+        return {"success": True, "data": parsed}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
 # ---- 角色管理 ----
 
 @router.get("/{work_id}/characters")

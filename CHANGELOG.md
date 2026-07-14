@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **AI 智能角色分配**：新增 `POST /{work_id}/volumes/{volume_id}/smart-char-assign` 端点，一键填充改为调用 DeepSeek 分析每章标题/大纲/关键事件，智能匹配合适的出场角色，取消不相关角色
+- **续写严格按大纲阶段推进**：`continueNextChapter` 改为从 `chapter_outlines` 查找对应章节的独立大纲，只把该章自己的描述发给 AI，不再发送整卷大纲导致内容跑偏
+- **历史记录续写补全大纲**：`continueStory` 补充 outline 字段传递，之前完全未传导致续写上下文丢失
+- **AI 规划输出分章节大纲**：后端 prompt 强化，要求输出多章规划的 title/outline/key_events 数组
+- **规划面板显示章节大纲计划**：AI 生成的每章标题、大纲、关键事件列表在面板底部展示，支持一键跳转创作并填入对应大纲
+- **规划保存章节大纲**：`saveVolumePlan` 同步持久化 `chapter_outlines` 到作品数据
+
 ## [0.4.0] - 2026-07-14
 
 ### Added
