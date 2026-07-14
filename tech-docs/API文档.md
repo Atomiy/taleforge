@@ -305,13 +305,101 @@ POST /works/{work_id}/chapters
 
 ---
 
-### 删除章节
+### 删除章节（从作品中移除）
 
 ```
-DELETE /works/{work_id}/chapters/{story_id}
+DELETE /works/{work_id}/chapters/{chapter_id}
 ```
 
 **响应**：`{"success": true, "chapter_ids": [...]}`
+
+---
+
+### 添加卷
+
+```
+POST /works/{work_id}/volumes
+```
+
+**请求体**：
+```json
+{
+  "title": "卷标题",
+  "description": "卷描述"
+}
+```
+
+**响应**：`{"work": {...}, "success": true}`
+
+---
+
+### 删除卷
+
+```
+POST /works/{work_id}/volumes/{volume_id}/delete
+```
+
+**响应**：`{"work": {...}, "success": true}`
+
+---
+
+### 保存卷规划
+
+```
+POST /works/{work_id}/volumes/{volume_id}/save
+```
+
+**请求体**：
+```json
+{
+  "volume_id": 1,
+  "outline": "卷故事大纲",
+  "responsibility": "卷职责",
+  "connection_to_prev": "与上卷衔接",
+  "connection_to_next": "对下卷铺垫",
+  "characters": [{"name": "角色名", "identity": "身份", "brief": "简述"}],
+  "foreshadowings": ["伏笔1", "伏笔2"],
+  "chapter_outlines": [
+    {"title": "第一章标题", "outline": "本章大纲内容"}
+  ],
+  "chapter_characters": {
+    "0": ["角色名1", "角色名2"]
+  }
+}
+```
+
+**响应**：`{"work": {...}, "success": true}`
+
+---
+
+### AI 辅助卷规划
+
+```
+POST /works/{work_id}/volumes/{volume_id}/ai-plan
+```
+
+**请求体**：
+```json
+{
+  "chapter_count": 5,
+  "requirement": "侧重动作冒险"
+}
+```
+
+**响应**：
+```json
+{
+  "outline": "卷整体大纲",
+  "responsibility": "卷的作用与定位",
+  "connection_to_prev": "与上一卷的衔接方式",
+  "connection_to_next": "为下一卷埋下的线索",
+  "characters": [{"name": "角色名", "identity": "身份", "brief": "简述"}],
+  "foreshadowings": ["伏笔1", "伏笔2"],
+  "chapters": [
+    {"title": "第1章", "outline": "本章大纲", "key_events": ["事件1", "事件2"]}
+  ]
+}
+```
 
 ---
 
