@@ -40,7 +40,7 @@ async def get_story(story_id: str):
 async def save_story(story_data: dict):
     try:
         story = Story(
-            id=story_data.get("id", history_manager.generate_id()),
+            id=story_data.get("id") or history_manager.generate_id(),
             title=story_data.get("title", "未命名"),
             content=story_data.get("content", ""),
             theme=story_data.get("theme", ""),
@@ -49,7 +49,7 @@ async def save_story(story_data: dict):
             outline=story_data.get("outline"),
             characters=story_data.get("characters"),
             created_at=datetime.now(),
-            word_count=len(story_data.get("content", "")),
+            word_count=history_manager._calculate_word_count(story_data.get("content", "")),
             series_id=story_data.get("series_id", ""),
             series_order=story_data.get("series_order", 1),
             world_setting=story_data.get("world_setting", ""),

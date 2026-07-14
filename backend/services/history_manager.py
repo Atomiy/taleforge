@@ -23,7 +23,11 @@ class HistoryManager:
     def save_story(self, story: Story) -> None:
         with _lock:
             stories = self._read_unlocked()
-            stories.insert(0, story)
+            existing_idx = next((i for i, s in enumerate(stories) if s.id == story.id), None)
+            if existing_idx is not None:
+                stories[existing_idx] = story
+            else:
+                stories.insert(0, story)
             self._write_unlocked(stories)
 
     def get_all_stories(self) -> List[Story]:

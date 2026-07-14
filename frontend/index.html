@@ -1123,6 +1123,8 @@
                 const savingKey = ref(false)
                 const storyContent = ref('')
                 const currentTitle = ref('')
+                const generatedOutline = ref(null)
+                const generatedCharacters = ref([])
                 const apiKey = ref('')
                 const generationProgress = ref(0)
                 const generationStepLabel = ref('')
@@ -1634,8 +1636,6 @@
                                             if (agent) agent.data = data.data
                                             if (data.agent === 'writer' && data.status === 'writing') {
                                                 storyContent.value += data.data
-                                            } else if (data.agent === 'polisher' && data.status === 'writing') {
-                                                storyContent.value = data.data
                                             } else if (data.agent === 'writer' && data.status === 'done') {
                                                 storyContent.value = data.data.content || data.data
                                             }
@@ -1644,6 +1644,8 @@
                                         if (data.agent === 'orchestrator' && data.status === 'complete') {
                                             currentTitle.value = data.data.title || storyForm.theme
                                             storyContent.value = data.data.content || storyContent.value
+                                            generatedOutline.value = data.data.outline || null
+                                            generatedCharacters.value = data.data.characters || []
                                         }
                                     }
                                 } catch (e) {
@@ -1665,6 +1667,7 @@
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
                             body: JSON.stringify({
+                                id: lastSavedStoryId.value || '',
                                 title: currentTitle.value || storyForm.theme,
                                 content: storyContent.value,
                                 theme: storyForm.theme,
@@ -1674,7 +1677,9 @@
                                 foreshadowings: foreshadowings.value,
                                 previous_story_id: storyForm.previous_story_id,
                                 series_id: storyForm.work_id,
-                                series_order: storyForm.chapter_number
+                                series_order: storyForm.chapter_number,
+                                outline: generatedOutline.value,
+                                characters: generatedCharacters.value
                             })
                         })
                         const savedData = await response.json()
@@ -1688,10 +1693,10 @@
                         }
                         await loadHistory()
                         if (showAlert) showToast('保存成功', 'success')
-                        // 记录最后保存的 story_id 以便续写
                         if (story_id) lastSavedStoryId.value = story_id
                     } catch (e) {
                         console.error(e)
+                        if (showAlert) showToast('保存失败: ' + (e.message || '未知错误'), 'error')
                     }
                 }
 
